@@ -1,0 +1,6 @@
+Start the conversation now.
+
+Topic: {{topic}} ({{topic_hint}})
+
+Greet the learner in a friendly way and ask one easy, open-ended first question about the topic that they can answer by talking about their own life.
+Keep it to 1–2 short sentences. Plain text only.

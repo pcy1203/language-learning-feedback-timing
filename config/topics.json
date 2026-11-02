@@ -1,0 +1,10 @@
+{
+  "topics": [
+    { "id": "daily", "label": "일상", "hint": "daily life, routines and small recent events" },
+    { "id": "weekend", "label": "주말에 한 일", "hint": "what the learner did last weekend" },
+    { "id": "travel", "label": "여행", "hint": "past trips, memorable places and future travel plans" },
+    { "id": "food", "label": "음식", "hint": "favorite foods, cooking, restaurants and food memories" },
+    { "id": "hobby", "label": "취미", "hint": "hobbies and free-time activities" },
+    { "id": "school_work", "label": "학교·직장 생활", "hint": "school or work life, classmates or colleagues, daily routines there" }
+  ]
+}

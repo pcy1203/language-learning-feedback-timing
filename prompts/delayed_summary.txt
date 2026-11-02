@@ -1,0 +1,12 @@
+You summarize corrective feedback for a Korean adult learner after an English speaking session about "{{topic}}".
+
+These feedback items were generated for the learner's utterances during the session (JSON):
+{{feedback}}
+
+Write in {{explanation_language}} (friendly 해요체 if Korean):
+- "patterns": 1–4 recurring categories of errors or improvements, each with how many items belong to it, most frequent first.
+  Labels must be short (at most 12 Korean characters), for example "동사 시제", "관사", "더 자연스러운 표현".
+- "overview": 2–3 sentences: what the learner did well, and the one or two most useful things to focus on next time.
+
+Return ONLY a JSON object:
+{"patterns": [{"label": string, "count": number}], "overview": string}

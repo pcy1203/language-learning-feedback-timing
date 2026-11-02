@@ -1,0 +1,87 @@
+@font-face {
+  font-family: 'Pretendard';
+  src: url('/fonts/PretendardVariable.woff2') format('woff2');
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --ink: #19191B;
+  --ink-2: #3A3A3F;
+  --muted: #55555B;
+  --muted-2: #6E6E74;
+  --line: #E7E6E2;
+  --line-2: #EFEEEA;
+  --line-strong: #D4D3CE;
+  --bg: #FFFFFF;
+  --bg-soft: #FAFAF8;
+  --bg-muted: #F6F6F4;
+  --bg-disabled: #ECECE9;
+
+  --accent: #003458;
+  --accent-hover: #00243D;
+  --accent-soft: #E9EFF4;
+  --accent-line: #C5D3DE;
+  --ai-bubble: #EEF2F6;
+
+  --fb-bg: #FFFBEF;
+  --fb-line: #EBD9A6;
+  --fb-line-strong: #D9B85E;
+  --fb-label: #7A5200;
+  --hl: #FFE7A3;
+  --hl-muted: #E0DFDB;
+
+  --red: #B3261E;
+  --red-ink: #8E1F18;
+  --red-soft: #FCEBEA;
+  --red-softer: #FDF4F3;
+  --red-line: #F3C4C0;
+  --rec: #D93A2E;
+  --green: #1E6B43;
+  --green-soft: #E9F5EE;
+
+  --radius: 10px;
+  --radius-lg: 14px;
+  --font: Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;
+}
+
+h1, h2, h3, p { margin: 0; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+a { color: var(--accent); }
+a:hover { color: var(--accent-hover); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+[hidden] { display: none !important; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.icon { display: inline-flex; flex: none; }
+.icon svg { display: block; }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

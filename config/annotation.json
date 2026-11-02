@@ -1,0 +1,46 @@
+{
+  "intro": {
+    "user": "방금 나눈 대화와 그때 만들어진 피드백이에요. 내가 요청하지 않아 보지 못한 피드백도 함께 보여드려요. 내가 한 말마다 아래 질문에 답해 주세요.",
+    "ai": "방금 나눈 대화와 그때 만들어진 피드백이에요. AI가 보여주지 않기로 한 피드백도 함께 보여드려요. 내가 한 말마다 아래 질문에 답해 주세요.",
+    "delayed": "방금 나눈 대화와, 대화가 끝난 뒤 모아서 본 피드백이에요. 이 피드백을 대화 도중 바로 받았다면 어땠을지도 함께 답해 주세요."
+  },
+  "states": {
+    "seen": "고칠 부분이 있었고, 피드백을 봤음",
+    "unseen": "고칠 부분이 있었지만, 대화 중에 피드백을 보지 않았음",
+    "checked_no_issue": "피드백을 요청했지만, 고칠 부분이 없었음",
+    "no_feedback": "고칠 부분이 없어 피드백이 없었음"
+  },
+  "labels": {
+    "seen": { "user": "요청해서 본 피드백", "ai": "대화 중에 본 피드백", "delayed": "종합 피드백에서 본 피드백" },
+    "unseen": { "user": "만들어졌지만 보지 않은 피드백", "ai": "만들어졌지만 AI가 보여주지 않은 피드백", "delayed": "만들어졌지만 보지 않은 피드백" },
+    "checked_no_issue": "피드백을 요청했지만 AI가 고칠 부분이 없다고 했어요",
+    "no_feedback": "피드백 없음 · AI가 고칠 부분이 없다고 판단했어요"
+  },
+  "questions": {
+    "content": { "label": "피드백 내용이", "options": ["적절했다", "적절하지 않았다"] },
+    "intent": { "label": "AI가 이해한 의도가", "options": ["맞다", "다르다"] },
+    "seen_help": { "label": "이 피드백을 본 것은", "options": ["도움이 되었다", "굳이 안 봐도 됐을 것 같다"] },
+    "unseen_help": { "label": "이 피드백을 봤다면", "options": ["도움이 됐을 것이다", "도움이 되지 않았을 것이다"] },
+    "need": { "label": "이 시점에 피드백이", "options": ["필요했다", "필요 없었다"] },
+    "hidden_need": { "label": "이 피드백을 대화 중에", "options": ["보여줬어야 했다", "안 보여줘도 괜찮았다"] },
+    "realtime": { "label": "대화 중에 바로 받았다면", "options": ["유용했을 것이다", "유용하지 않았을 것이다"] },
+    "should_have": { "label": "이 말에 피드백이", "options": ["있어야 했다", "없어도 괜찮았다"] }
+  },
+  "rules": {
+    "user": {
+      "seen": ["content", "intent", "seen_help"],
+      "unseen": ["content", "intent", "unseen_help"],
+      "checked_no_issue": ["intent", "should_have"],
+      "no_feedback": ["intent", "should_have"]
+    },
+    "ai": {
+      "seen": ["content", "intent", "need"],
+      "unseen": ["content", "intent", "hidden_need"],
+      "no_feedback": ["intent", "should_have"]
+    },
+    "delayed": {
+      "seen": ["content", "intent", "realtime"],
+      "no_feedback": ["intent", "should_have"]
+    }
+  }
+}
