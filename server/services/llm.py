@@ -1,4 +1,4 @@
-"""OpenAI 호출 래퍼 (재시도, JSON 파싱)."""
+"""OpenAI 호출 래퍼: 피드백·점수·Delayed 요약 (Responses API, JSON 출력, 재시도)."""
 import asyncio
 import json
 import re
@@ -17,34 +17,6 @@ def client() -> AsyncOpenAI:
     return _client
 
 
-async def chat(
-    messages: list[dict],
-    model: str,
-    *,
-    json_mode: bool = False,
-    temperature: float | None = None,
-    retries: int = 2,
-) -> str:
-    kwargs: dict = {"model": model, "messages": messages}
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    last_error: Exception | None = None
-    for attempt in range(retries + 1):
-        try:
-            resp = await client().chat.completions.create(**kwargs)
-            return (resp.choices[0].message.content or "").strip()
-        except Exception as e:  # 네트워크 오류, 속도 제한 등
-            last_error = e
-            # 일부 모델은 temperature 를 지원하지 않는다 → 빼고 다시 시도
-            if "temperature" in str(e) and "temperature" in kwargs:
-                kwargs.pop("temperature")
-                continue
-            await asyncio.sleep(0.8 * (attempt + 1))
-    raise last_error  # type: ignore[misc]
-
-
 def parse_json(text: str) -> dict:
     try:
         return json.loads(text)
@@ -55,6 +27,45 @@ def parse_json(text: str) -> dict:
         raise
 
 
-async def chat_json(messages: list[dict], model: str, *, temperature: float | None = None) -> dict:
-    text = await chat(messages, model, json_mode=True, temperature=temperature)
-    return parse_json(text)
+async def generate_json(prompt: str, *, model: str | None = None, effort: str | None = None, retries: int = 2) -> dict:
+    """프롬프트 하나를 보내 JSON 객체를 받는다.
+
+    GPT-5 계열은 temperature 대신 reasoning.effort 로 추론 강도를 조절한다 (.env FEEDBACK_REASONING_EFFORT).
+    """
+    kwargs: dict = {
+        "model": model or settings.feedback_model,
+        "input": [{"role": "user", "content": prompt}],
+        "text": {"format": {"type": "json_object"}},
+    }
+    effort = settings.feedback_reasoning_effort if effort is None else effort
+    if effort:
+        kwargs["reasoning"] = {"effort": effort}
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            resp = await client().responses.create(**kwargs)
+            return parse_json((resp.output_text or "").strip())
+        except Exception as e:  # 네트워크 오류, 속도 제한, JSON 깨짐 등
+            last_error = e
+            # 모델이 reasoning 옵션을 지원하지 않으면 빼고 다시 시도
+            if "reasoning" in str(e).lower() and "reasoning" in kwargs:
+                kwargs.pop("reasoning")
+                continue
+            await asyncio.sleep(0.8 * (attempt + 1))
+    raise last_error  # type: ignore[misc]
+
+
+async def ping() -> str:
+    """연결 확인용 아주 짧은 호출. 모델마다 지원하는 추론 강도가 달라 none → minimal → 기본값 순으로 시도한다."""
+    kwargs: dict = {"model": settings.feedback_model, "input": "Reply with the single word: ok", "max_output_tokens": 256}
+    last: Exception | None = None
+    for effort in ("none", "minimal", None):
+        try:
+            extra = {"reasoning": {"effort": effort}} if effort else {}
+            resp = await client().responses.create(**kwargs, **extra)
+            return (resp.output_text or "").strip() or "(응답 받음)"
+        except Exception as e:
+            last = e
+            if "reasoning" not in str(e).lower() and "effort" not in str(e).lower():
+                raise
+    raise last  # type: ignore[misc]

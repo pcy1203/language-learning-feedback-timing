@@ -1,7 +1,7 @@
 """Admin 대시보드: data/ 의 로그 파일을 읽어 조건(User Trigger / AI Decision / Delayed)별로 집계한다."""
 from statistics import mean, pstdev
 
-from ..config import TASK_KEYS, annotation_config, survey_config, tasks_config
+from ..config import TASK_KEYS, annotation_config, survey_config, tasks_config, thresholds
 from ..storage import codes_store, session_store
 from ..storage.event_logger import read_events
 
@@ -55,7 +55,10 @@ def _condition_stats(task: str, sessions: list[tuple[dict, dict]], toggles: dict
         "issue_rate": _rate(len(issues), len(with_fb)),
         "shown_live": len(shown_live),
         "shown_live_rate": _rate(len(shown_live), len(issues)),
-        "avg_severity": _avg([t["feedback"].get("severity") for _, t in issues]),
+        "avg_max_l1": _avg([t["feedback"].get("max_l1") for _, t in with_fb]),
+        "avg_max_l2": _avg([t["feedback"].get("max_l2") for _, t in with_fb]),
+        "sentences": sum(len(t["feedback"].get("sentences", [])) for _, t in with_fb),
+        "flagged_sentences": sum(t["feedback"].get("flagged_sentences", 0) for _, t in with_fb),
         "detailed_start_rate": _rate(sum(1 for m in start_modes if m == "detailed"), len(start_modes)),
         "avg_mode_toggles": _avg([toggles.get((s.get("code"), task), 0) for _, s in sessions]),
     }
@@ -68,22 +71,7 @@ def _condition_stats(task: str, sessions: list[tuple[dict, dict]], toggles: dict
         out["requested_with_issue_rate"] = _rate(sum(1 for t in requested if (t.get("feedback") or {}).get("has_issue")), len(requested))
     if task == "ai":
         decisions = [t["intervention"] for _, t in users if t.get("intervention")]
-        judged = [d for d in decisions if d.get("zone") not in (None, "no_issue")]
-        zones = {}
-        for d in judged:
-            zones[d.get("zone")] = zones.get(d.get("zone"), 0) + 1
-        out["intervention"] = {
-            "decisions": len(decisions),
-            "judged": len(judged),
-            "show_rate_all_turns": _rate(sum(1 for d in decisions if d.get("show")), len(users)),
-            "show_rate_judged": _rate(sum(1 for d in judged if d.get("show")), len(judged)),
-            "avg_score": _avg([d.get("score") for d in judged]),
-            "judge_show_rate": _rate(sum(1 for d in judged if d.get("llm_show")), len(judged)),
-            "overridden": sum(1 for d in judged if d.get("overridden")),
-            "overridden_to_show": sum(1 for d in judged if d.get("overridden") and d.get("show")),
-            "overridden_to_hide": sum(1 for d in judged if d.get("overridden") and not d.get("show")),
-            "zones": zones,
-        }
+        out["ai_show_rate"] = _rate(sum(1 for d in decisions if d.get("show")), len(users))
     return out
 
 
@@ -134,6 +122,24 @@ def _annotation(task_sessions: dict[str, list]) -> dict:
     return out
 
 
+def _score_dist(task_sessions: dict[str, list]) -> dict:
+    """문장별 L1·L2 점수 분포 (1~10). 기준값 N을 정할 때 참고."""
+    out = {}
+    for task, sessions in task_sessions.items():
+        l1, l2 = [0] * 10, [0] * 10
+        for _, s in sessions:
+            for t in s.get("turns", []):
+                for se in ((t.get("feedback") or {}).get("sentences") or []):
+                    a, b = se.get("l1", {}).get("score"), se.get("l2", {}).get("score")
+                    if isinstance(a, int) and 1 <= a <= 10:
+                        l1[a - 1] += 1
+                    if isinstance(b, int) and 1 <= b <= 10:
+                        l2[b - 1] += 1
+        out[task] = {"L1": l1, "L2": l2}
+    total = {"L1": [sum(out[k]["L1"][i] for k in out) for i in range(10)], "L2": [sum(out[k]["L2"][i] for k in out) for i in range(10)]}
+    return {"by_condition": out, "all": total, "thresholds": thresholds()}
+
+
 def build(only_finished: bool = False) -> dict:
     participants, counts = _participants(only_finished)
     task_sessions: dict[str, list] = {k: [] for k in TASK_KEYS}
@@ -162,6 +168,7 @@ def build(only_finished: bool = False) -> dict:
         ],
         "likert": _likert(task_sessions),
         "annotation": _annotation(task_sessions),
+        "scores": _score_dist(task_sessions),
     }
 
 
@@ -183,6 +190,10 @@ def summary_rows(data: dict) -> list[dict]:
             for m in ("n", "mean", "sd"):
                 rows.append({"section": "likert", "condition": tasks[task]["name"], "metric": f"{key}.{m}", "value": st[m]})
             rows.append({"section": "likert", "condition": tasks[task]["name"], "metric": f"{key}.dist", "value": str(st["dist"])})
+    for task, dist in data["scores"]["by_condition"].items():
+        for crit in ("L1", "L2"):
+            for i, n in enumerate(dist[crit]):
+                rows.append({"section": "score_distribution", "condition": tasks[task]["name"], "metric": f"{crit}={i + 1}", "value": n})
     for task, groups in data["annotation"].items():
         for g in groups:
             for q in g["questions"]:

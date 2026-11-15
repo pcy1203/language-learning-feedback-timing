@@ -2,7 +2,7 @@
 import { h, icon } from '../lib/dom.js';
 import { state, stepsFor, STEP_LABELS } from '../state.js';
 
-export function renderSidebar(aside) {
+export function renderSidebar(aside, { onExit } = {}) {
   const { participant, config } = state;
   const steps = participant.order.map((task, i) => {
     const done = state.finished || i < state.taskIndex;
@@ -35,5 +35,8 @@ export function renderSidebar(aside) {
       h('span', { class: 'sb-title' }, config.study_title),
       h('span', { class: 'sb-code' }, '참가 코드 ', h('strong', {}, participant.code))),
     h('ol', { class: 'sb-steps', 'aria-label': '진행 단계' }, steps),
+    onExit ? h('div', { class: 'sb-foot' },
+      h('button', { type: 'button', class: 'sb-exit', onclick: onExit }, icon('exit', 15), '나가기'),
+      h('span', {}, '진행 상황은 저장돼요')) : null,
   );
 }

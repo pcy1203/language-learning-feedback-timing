@@ -3,17 +3,17 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .config import WEB_DIR, settings
-from .routes import admin, annotation, log, session, survey, tts, turn
+from .routes import admin, annotation, log, session, survey, turn
 
 app = FastAPI(title="Feedback Timing Study")
 
-for r in (session.router, turn.router, tts.router, annotation.router, survey.router, log.router, admin.router):
+for r in (session.router, turn.router, annotation.router, survey.router, log.router, admin.router):
     app.include_router(r)
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "mock": settings.mock}
+    return {"ok": True, "mock": settings.mock, "api": settings.api_status()}
 
 
 # API 라우트 뒤에 마운트해야 /api/* 가 가려지지 않는다

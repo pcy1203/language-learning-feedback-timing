@@ -5,12 +5,12 @@ import { h, icon, clear, fmtClock } from '../lib/dom.js';
 import { toast } from '../lib/toast.js';
 import { highlighted } from '../lib/diff.js';
 import { renderDashboard } from './admin-dashboard.js';
+import { apiStatus } from '../components/api-status.js';
 
-const KIND_LABEL = { turns: '대화·피드백', events: '이벤트', annotations: 'Annotation', survey: '설문' };
+const KIND_LABEL = { turns: '대화·피드백', sentences: '문장별 점수', events: '이벤트', annotations: 'Annotation', survey: '설문' };
 const VIA_LABEL = { request: '요청해서 확인', ai: 'AI가 보여줌', summary: '종합 피드백에서 확인' };
 const STATE_LABEL = { seen: '봤음', unseen: '못 봤음', checked_no_issue: '요청 · 고칠 부분 없음', no_feedback: '피드백 없음' };
 const Q_LABEL = { content: '내용', intent: '의도', seen_help: '본 것이', unseen_help: '봤다면', need: '필요성', hidden_need: '보여줬어야', realtime: '실시간이었다면', should_have: '피드백이' };
-const ZONE_LABEL = { warmup: '초반', on_target: '목표 근처', too_many: '개입 많음', too_few: '개입 적음', no_issue: '고칠 부분 없음' };
 
 function feedbackState(task, t) {
   const fb = t.feedback;
@@ -18,6 +18,26 @@ function feedbackState(task, t) {
   if (fb.has_issue) return t.shown ? 'seen' : 'unseen';
   if (task === 'user' && (t.requested || t.shown_via === 'request')) return 'checked_no_issue';
   return 'no_feedback';
+}
+
+// 문장별 L1·L2 점수와 채점 근거 (기준 이상은 진하게)
+function sentenceTable(fb) {
+  const th = fb.thresholds || {};
+  const cell = (score, n) => h('td', { class: `sc${score >= n ? ' hit' : ''}` }, String(score));
+  return h('details', { class: 'sent-scores' },
+    h('summary', {}, `문장별 점수 · 최고 L1 ${fb.max_l1} · L2 ${fb.max_l2} (기준 ${th.L1}/${th.L2}) · 피드백 대상 ${fb.flagged_sentences}문장`),
+    h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, '문장'), h('th', {}, 'L1'), h('th', {}, 'L2'), h('th', {}, '채점 근거'))),
+      h('tbody', {}, fb.sentences.map((s) => h('tr', { class: s.flagged ? 'flagged' : '' },
+        h('td', {}, String(s.index)),
+        h('td', { lang: 'en' }, s.original, s.changed ? h('div', { class: 'rev' }, '→ ', s.revised) : null),
+        cell(s.l1.score, th.L1),
+        cell(s.l2.score, th.L2),
+        h('td', { class: 'why' },
+          h('div', {}, h('b', {}, '청자 '), s.l1.literal_ko || '—',
+            s.l1.other_interpretation ? ' · 다른 해석 가능' : '', s.l1.needs_effort ? ' · 노력 필요' : ''),
+          h('div', {}, h('b', {}, '화자 '), s.l1.intended_ko || '—'),
+          s.l2.natural_revision ? h('div', { lang: 'en' }, h('b', {}, '자연 '), s.l2.natural_revision) : null))))));
 }
 
 function dlLink(href, label, { primary = false, small = false } = {}) {
@@ -37,14 +57,36 @@ export function render(root, ctx) {
   const navDash = h('button', { type: 'button', onclick: () => switchTab('dashboard') }, '대시보드');
   const navLogs = h('button', { type: 'button', onclick: () => switchTab('logs') }, '로그');
   const body = h('div');
+  // API 연결 상태 줄: 키 연결 여부 + '연결 확인'(실제로 짧게 호출해 봄)
+  const statusSlot = h('div', { class: 'api-status-slot' });
+  const checkResult = h('span', { class: 'api-check-result', role: 'status' });
+  const checkBtn = h('button', { type: 'button', class: 'btn btn-outline btn-sm' }, icon('refresh', 14), '연결 확인');
+  checkBtn.addEventListener('click', async () => {
+    checkBtn.disabled = true;
+    checkResult.textContent = '두 API에 짧게 호출해 보는 중…';
+    try {
+      const r = await api.admin.checkApi();
+      const fmt = (name, x) => (x.ok === null ? `${name}: 확인 안 함 (${x.detail})` : x.ok ? `${name}: 정상 (${x.ms}ms)` : `${name}: 실패 · ${x.detail}`);
+      checkResult.textContent = `${fmt('대화 AI', r.chat)}  ·  ${fmt('피드백', r.feedback)}  ·  ${fmt('전사', r.stt)}`;
+      checkResult.className = `api-check-result ${[r.chat.ok, r.feedback.ok, r.stt?.ok].includes(false) ? 'bad' : 'good'}`;
+    } catch (err) {
+      handleError(err);
+      checkResult.textContent = '';
+    }
+    checkBtn.disabled = false;
+  });
   root.append(
     h('header', { class: 'admin-header' },
       h('div', { class: 'admin-left' },
         h('div', { class: 'admin-brand' }, brand, h('span', { class: 'badge-admin' }, 'ADMIN')),
         h('nav', { class: 'admin-nav', 'aria-label': '관리자 메뉴' }, navCodes, navDash, navLogs)),
       h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => ctx.logout() }, '나가기')),
+    h('div', { class: 'admin-apibar' }, statusSlot, h('div', { class: 'api-check' }, checkResult, checkBtn)),
     body);
-  api.publicInfo().then((p) => { brand.textContent = p.study_title + (p.mock ? ' · MOCK 모드' : ''); }).catch(() => {});
+  api.publicInfo().then((p) => {
+    brand.textContent = p.study_title;
+    statusSlot.replaceChildren(apiStatus(p.api));
+  }).catch(() => {});
 
   function handleError(err) {
     if (err.status === 401) {
@@ -277,7 +319,7 @@ export function render(root, ctx) {
       const tags = [];
       const st = feedbackState(task, t);
       if (!fb) tags.push(h('span', {}, t.feedback_status === 'error' ? '피드백 오류' : '피드백 대기'));
-      else if (!fb.has_issue) tags.push(h('span', {}, '고칠 부분 없음'));
+      else if (!fb.has_issue) tags.push(h('span', {}, '기준 미만 · 피드백 없음'));
       else if (t.shown) tags.push(h('span', { class: 'seen' }, VIA_LABEL[t.shown_via] || '확인함'));
       else tags.push(h('span', {}, '생성됨 · 확인 안 함'));
       if (task === 'user' && (t.requested || t.shown_via === 'request')) {
@@ -286,14 +328,7 @@ export function render(root, ctx) {
         tags.push(h('span', {}, '피드백 보기 안 누름'));
       }
       if (st) tags.push(h('span', {}, `Annotation 상태: ${STATE_LABEL[st]}`));
-      if (fb?.has_issue) tags.push(h('span', {}, `심각도 ${fb.severity}`));
-      const iv = t.intervention;
-      if (iv && iv.zone !== 'no_issue') {
-        const thr = iv.threshold != null ? ` · 문턱 ${iv.threshold}` : '';
-        const judge = iv.llm_show != null ? ` · LLM ${iv.llm_show ? '보여줌' : '숨김'}` : '';
-        tags.push(h('span', { class: iv.show ? 'seen' : '' },
-          `개입 ${iv.show ? '보여줌' : '안 보여줌'} · 점수 ${iv.score ?? '—'}${judge}${thr} · ${ZONE_LABEL[iv.zone] || iv.zone || iv.rule}${iv.overridden ? ' · 보정됨' : ''}`));
-      }
+      if (t.intervention) tags.push(h('span', { class: t.intervention.show ? 'seen' : '' }, `AI Decision: ${t.intervention.show ? '보여줌' : '안 보여줌'}`));
       answers.filter((a) => a.turn_id === t.id).forEach((a) => {
         const good = a.value === 0;
         tags.push(h('span', { class: good ? 'good' : 'bad' }, `${qLabel(a.key)}: ${a.label}`));
@@ -302,10 +337,16 @@ export function render(root, ctx) {
         h('div', { class: 'head' },
           h('span', {}, `#${t.id}`), h('b', {}, '참가자'), h('span', {}, fmtClock(t.ts)),
           t.duration_s ? h('span', {}, `${t.duration_s}초`) : null,
-          t.input === 'typed' ? h('span', {}, '직접 입력') : null),
+          t.input === 'typed' ? h('span', {}, '직접 입력') : null,
+          t.stt_engine && t.stt_engine !== 'typed' ? h('span', {}, t.stt_engine === 'whisper' ? 'Whisper 전사' : (t.stt_cleaned ? '브라우저 전사 · 다듬음' : '브라우저 전사')) : null),
         h('p', { lang: 'en' }, t.text),
+        t.stt_raw && t.stt_raw !== t.text ? h('p', { class: 'stt-raw', lang: 'en' }, h('b', {}, '다듬기 전 '), t.stt_raw) : null,
+        t.stt_preview && t.stt_preview !== t.text ? h('p', { class: 'stt-raw', lang: 'en' }, h('b', {}, '브라우저 미리보기 '), t.stt_preview) : null,
+        t.recording_url ? h('div', { class: 'rec-row' },
+          h('audio', { controls: true, preload: 'none', src: t.recording_url }),
+          h('span', {}, t.recording?.name || '')) : null,
         fb?.has_issue ? h('p', { class: 'revised', lang: 'en' }, highlighted(t.text, fb.revised)) : null,
-        fb?.intended_meaning ? h('p', { style: { fontSize: '12px', color: 'var(--muted)' } }, `의도 추정 · ${fb.intended_meaning}`) : null,
+        fb?.sentences?.length ? sentenceTable(fb) : null,
         h('div', { class: 'tags' }, tags));
     });
 

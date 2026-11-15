@@ -4,12 +4,14 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from fastapi.responses import FileResponse
+
 from ..auth import is_admin_code, issue_admin_token
 from ..config import app_settings, settings, topic_info
 from ..services import conversation_agent, delayed_summary, feedback_jobs
-from ..storage import session_store
+from ..storage import audio_store, session_store
 from ..storage.event_logger import log_admin_event, log_event, now_iso
-from .common import check_task, get_participant, get_session_or_404, participant_config, public_participant, strip_hidden
+from .common import ai_turn, check_task, get_participant, get_session_or_404, participant_config, public_participant, strip_hidden
 
 router = APIRouter(prefix="/api")
 
@@ -19,7 +21,17 @@ Mode = Literal["simple", "detailed"]
 
 @router.get("/public")
 def public_info():
-    return {"study_title": app_settings().get("study_title", ""), "mock": settings.mock}
+    """로그인 화면 · 관리자 화면에 보여줄 정보 (연구명, API 연결 상태). 키 값은 내보내지 않는다."""
+    return {"study_title": app_settings().get("study_title", ""), "mock": settings.mock, "api": settings.api_status()}
+
+
+@router.get("/audio/{code}/{task}/{turn_id}.wav")
+def get_audio(code: str, task: Task, turn_id: int):
+    p = get_participant(code)
+    path = audio_store.audio_path(p["code"], task, turn_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="음성 파일이 없어요.")
+    return FileResponse(path, media_type="audio/wav")
 
 
 class LoginIn(BaseModel):
@@ -81,10 +93,13 @@ async def start_session(body: StartIn):
         topic = topic_info(p["topics"][body.task])
         try:
             first = await conversation_agent.opening(topic)
+            if not first["text"]:
+                raise ValueError("empty opening")
         except Exception as e:
             log_event(code, "ai_error", {"where": "opening", "error": str(e)[:300]}, task=body.task)
             raise HTTPException(status_code=502, detail="AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.")
         now = now_iso()
+        first_turn = ai_turn(code, body.task, 1, first)
         session = {
             "code": code,
             "task": body.task,
@@ -92,13 +107,15 @@ async def start_session(body: StartIn):
             "topic": topic["id"],
             "mode": body.mode,
             "mode_history": [{"ts": now, "mode": body.mode}],
+            "models": {"chat": settings.chat_model, "feedback": settings.feedback_model,
+                       "mock_chat": settings.mock_chat, "mock_feedback": settings.mock_feedback},
             "started_at": now,
             "ended_at": None,
-            "turns": [{"id": 1, "role": "ai", "text": first, "ts": now}],
+            "turns": [first_turn],
         }
         session_store.save_session(code, body.task, session)
-    log_event(code, "session_start", {"mode": body.mode, "topic": topic["id"], "mock": settings.mock}, task=body.task)
-    log_event(code, "ai_utterance", {"turn_id": 1, "text": first}, task=body.task)
+    log_event(code, "session_start", {"mode": body.mode, "topic": topic["id"], "models": session["models"]}, task=body.task)
+    log_event(code, "ai_utterance", {"turn_id": 1, "text": first_turn["text"], "audio": first_turn.get("audio")}, task=body.task)
     return session
 
 

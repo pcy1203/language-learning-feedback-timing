@@ -3,8 +3,10 @@ import copy
 
 from fastapi import HTTPException
 
-from ..config import TASK_KEYS, annotation_config, app_settings, survey_config, tasks_config, topic_info
-from ..storage import codes_store, session_store
+from ..config import TASK_KEYS, annotation_config, app_settings, settings, survey_config, tasks_config, thresholds, topic_info
+from ..services.gemini_live import SAMPLE_RATE
+from ..storage import audio_store, codes_store, session_store
+from ..storage.event_logger import now_iso
 
 
 def get_participant(code: str) -> dict:
@@ -41,10 +43,25 @@ def participant_config() -> dict:
     return {
         "study_title": s.get("study_title", ""),
         "settings": {k: s[k] for k in keys if k in s},
+        "test_mode_enabled": bool(s.get("test_mode", {}).get("enabled", True)),
+        "stt": {"engine": settings.stt_engine, "cleanup": settings.stt_engine == "browser" and settings.stt_cleanup},
+        "reply_delay_seconds": {k: v for k, v in (s.get("reply_delay_seconds") or {}).items() if not k.startswith("_")},
+        "thresholds": thresholds(),
         "tasks": tasks_config(),
         "survey": survey_config(),
         "annotation": annotation_config(),
     }
+
+
+def ai_turn(code: str, task: str, turn_id: int, result: dict) -> dict:
+    """대화 AI 결과({text, pcm})로 세션에 저장할 AI 턴을 만든다. 음성은 data/audio 에 wav 로 저장."""
+    turn = {"id": turn_id, "role": "ai", "text": result["text"], "ts": now_iso()}
+    audio = audio_store.save(code, task, turn_id, result.get("pcm") or b"", SAMPLE_RATE)
+    if audio:
+        turn["audio"] = audio
+        if settings.ai_voice == "live":
+            turn["audio_url"] = f"/api/audio/{code}/{task}/{turn_id}.wav"
+    return turn
 
 
 def strip_hidden(session: dict) -> dict:

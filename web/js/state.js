@@ -19,12 +19,18 @@ function load() {
 
 export const state = Object.assign(initial(), load());
 
+// ?test=true 로 들어오면 테스트 모드 (대화 화면에서 발화 아래 L1·L2 점수 표시). ?test=false 로 끈다.
+const testParam = new URLSearchParams(location.search).get('test');
+if (testParam !== null) state.testMode = testParam === 'true' || testParam === '1';
+
 export function save() {
   try { sessionStorage.setItem(KEY, JSON.stringify(state)); } catch { /* 무시 */ }
 }
 
 export function resetState() {
-  Object.assign(state, initial());
+  const keep = { testMode: state.testMode };
+  for (const k of Object.keys(state)) delete state[k];
+  Object.assign(state, initial(), keep);
   try { sessionStorage.removeItem(KEY); } catch { /* 무시 */ }
 }
 

@@ -14,5 +14,8 @@ export const ICONS = {
   refresh: (s) => svg(s, '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
   chrome: (s) => svg(s, '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>'),
   clipboard: (s) => svg(s, '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>'),
+  play: (s) => svg(s, '<path d="M8 5.5v13l10.5-6.5z"/>'),
+  stopSq: (s) => svg(s, '<rect x="7" y="7" width="10" height="10" rx="1.5"/>'),
+  exit: (s) => svg(s, '<path d="M14 5H6v14h8M10 12h10M17 9l3 3-3 3"/>'),
   dot: (s) => svg(s, '<circle cx="12" cy="12" r="3"/>'),
 };

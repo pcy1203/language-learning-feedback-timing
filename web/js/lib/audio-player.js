@@ -1,10 +1,10 @@
-// AI 발화 재생: 서버 TTS(OpenAI) → 실패하면 브라우저 내장 음성으로 대체
-let current = null; // { audio, url, resolve }
+// AI 발화 재생: Gemini Live 가 만든 음성 파일(audio_url)이 있으면 그걸 재생하고,
+// 없거나 재생에 실패하면 브라우저 내장 음성(speechSynthesis)으로 읽는다.
+let current = null; // { audio, resolve }
 
 export function stopAudio() {
   if (current) {
     try { current.audio.pause(); } catch { /* 무시 */ }
-    URL.revokeObjectURL(current.url);
     const r = current.resolve;
     current = null;
     r?.('stopped');
@@ -32,25 +32,34 @@ function speakBrowser(text) {
   });
 }
 
-export async function speak(text) {
+function playFile(url) {
+  return new Promise((resolve) => {
+    const audio = new Audio(url);
+    current = { audio, resolve, url };
+    audio.onended = () => { current = null; resolve('live'); };
+    audio.onerror = () => { current = null; resolve(null); };
+    audio.play().catch(() => { current = null; resolve(null); });
+  });
+}
+
+export async function speak(text, audioUrl) {
   stopAudio();
-  try {
-    const res = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    if (res.status === 200) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      return await new Promise((resolve) => {
-        current = { audio, url, resolve };
-        audio.onended = () => { URL.revokeObjectURL(url); current = null; resolve('tts'); };
-        audio.onerror = () => { current = null; speakBrowser(text).then(resolve); };
-        audio.play().catch(() => { current = null; speakBrowser(text).then(resolve); });
-      });
-    }
-  } catch { /* 아래에서 브라우저 음성으로 */ }
+  if (audioUrl) {
+    const via = await playFile(audioUrl);
+    if (via) return via;
+  }
   return speakBrowser(text);
+}
+
+// 내 녹음 다시 듣기. 같은 파일을 재생 중에 다시 누르면 멈춘다.
+// 반환: 'ended' | 'stopped' | 'error'
+export async function playClip(url) {
+  if (current?.url === url) { stopAudio(); return 'stopped'; }
+  stopAudio();
+  const via = await playFile(url);
+  return via === 'live' ? 'ended' : via === 'stopped' ? 'stopped' : 'error';
+}
+
+export function isPlaying(url) {
+  return current?.url === url;
 }

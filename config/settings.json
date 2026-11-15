@@ -2,20 +2,27 @@
   "study_title": "AI 활용 외국어 말하기 학습에서 교정적 피드백의 시점 연구",
   "admin_code": "admin",
   "session_seconds": 600,
-  "recommended_speech_seconds": [20, 50],
+  "recommended_speech_seconds": [
+    20,
+    50
+  ],
   "speech_bar_max_seconds": 60,
   "stt_lang": "en-US",
   "context_turns": 6,
   "feedback_explanation_language": "Korean",
-  "intervention": {
-    "_comment": "AI Decision: LLM 판정(점수 0~100 + 보여줄지) → 최근 window 턴의 노출 비율이 target_rate 에서 벗어나면 적응형 문턱값으로 보정",
-    "window": 3,
-    "target_rate": 0.667,
-    "tolerance": 0.17,
-    "min_history": 2,
-    "base_threshold": 50,
-    "gain": 60,
-    "min_threshold": 10,
-    "max_threshold": 90
+  "feedback_threshold": {
+    "_comment": "문장마다 L1(의미 전달 영향)·L2(표현의 자연스러움)를 1~10점으로 채점하고, 둘 중 하나라도 이 값 이상이면 그 문장을 피드백 대상으로 본다. 세 조건(User Trigger · AI Decision · Delayed)에 똑같이 적용된다. 바꾼 값은 서버 재시작 없이 다음 발화부터 적용된다.",
+    "L1": 5,
+    "L2": 5
+  },
+  "reply_delay_seconds": {
+    "_comment": "대화 상대가 말을 시작하기 전 기다리는 시간(초). user: User Trigger 에서 응답이 준비된 뒤 이만큼 더 기다렸다가 말한다(피드백 보기를 누를 여유). ai_after_feedback: AI Decision 에서 피드백이 나온 뒤 대화 상대가 말하기까지의 간격.",
+    "user": 2.5,
+    "ai_after_feedback": 1.0
+  },
+  "ai_decision_feedback_wait_seconds": 60,
+  "test_mode": {
+    "_comment": "주소에 ?test=true 를 붙이면 대화 화면에서 발화 아래에 문장별 L1·L2 점수가 보인다. 본 실험에서 막으려면 enabled 를 false 로.",
+    "enabled": true
   }
 }

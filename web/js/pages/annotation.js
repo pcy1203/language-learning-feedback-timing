@@ -12,6 +12,8 @@ import { highlighted } from '../lib/diff.js';
 import { logEvent } from '../lib/log.js';
 import { toast } from '../lib/toast.js';
 import { pageFooter } from '../components/page-footer.js';
+import { playButton } from '../components/message-bubble.js';
+import { playClip, stopAudio } from '../lib/audio-player.js';
 
 export function feedbackState(task, turn) {
   const fb = turn.feedback;
@@ -66,11 +68,17 @@ export function render(main, ctx) {
     return h('div', { class: 'ann-q', role: 'group', 'aria-label': q.label }, h('span', {}, q.label), h('div', { class: 'opts' }, buttons));
   }
 
+  async function onPlay(url) {
+    logEvent('recording_play', { url, where: 'annotation' });
+    const r = await playClip(url);
+    logEvent('recording_play_end', { url, where: 'annotation', result: r });
+  }
+
   function userCard(turn) {
     const fb = turn.feedback;
     const body = h('div', { class: 'ann-body' },
       h('div', { class: 'ann-said' },
-        h('b', {}, '나'),
+        h('div', { class: 'who' }, h('b', {}, '나'), turn.recording_url ? playButton(turn.recording_url, onPlay) : null),
         h('div', { class: 'col' },
           h('p', { lang: 'en' }, turn.text),
           fb?.intended_meaning ? h('p', { class: 'ann-intent' }, h('b', {}, 'AI가 이해한 의도'), ' · ', fb.intended_meaning) : null)));
@@ -112,8 +120,10 @@ export function render(main, ctx) {
       : userCard(t)));
     listEl.replaceChildren(...items);
     refreshFooter();
-    logEvent('annotation_view', { questions: required.size });
+    logEvent('annotation_view', { questions: required.size, recordings: s.turns.filter((t) => t.recording_url).length });
   }).catch((err) => {
     listEl.replaceChildren(h('li', { class: 'error-box', role: 'alert' }, err.message));
   });
+
+  return () => stopAudio();
 }

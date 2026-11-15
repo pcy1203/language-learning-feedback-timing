@@ -1,9 +1,17 @@
 {
+  "_comment": "관리자가 코드를 만들 때 Task마다 고르는 대화 주제. label 은 화면에 보이는 이름, hint 는 대화 AI에게 주는 설명(영어). legacy_topics 는 목록에서 뺀 예전 주제로, 이미 만든 코드의 주제 이름을 보여줄 때만 쓴다.",
   "topics": [
     { "id": "daily", "label": "일상", "hint": "daily life, routines and small recent events" },
-    { "id": "weekend", "label": "주말에 한 일", "hint": "what the learner did last weekend" },
     { "id": "travel", "label": "여행", "hint": "past trips, memorable places and future travel plans" },
-    { "id": "food", "label": "음식", "hint": "favorite foods, cooking, restaurants and food memories" },
+    { "id": "food", "label": "음식, 맛집", "hint": "favorite foods, cooking, good restaurants and places to eat" },
+    { "id": "media", "label": "영화, 드라마, 음악", "hint": "movies, TV dramas and shows, music and artists the learner likes" },
+    { "id": "sports_hobby", "label": "운동, 취미", "hint": "sports, exercise, hobbies and free-time activities" },
+    { "id": "school_major", "label": "학교생활, 전공", "hint": "school or university life, classes, the learner's major and studies" },
+    { "id": "career", "label": "진로, 취업, 면접", "hint": "career plans, job hunting, internships and job interviews" },
+    { "id": "society", "label": "사회 이슈, 뉴스", "hint": "recent news and social issues the learner has opinions about, kept light and non-confrontational" }
+  ],
+  "legacy_topics": [
+    { "id": "weekend", "label": "주말에 한 일", "hint": "what the learner did last weekend" },
     { "id": "hobby", "label": "취미", "hint": "hobbies and free-time activities" },
     { "id": "school_work", "label": "학교·직장 생활", "hint": "school or work life, classmates or colleagues, daily routines there" }
   ]

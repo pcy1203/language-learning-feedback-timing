@@ -9,14 +9,17 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from ..auth import require_admin
-from ..config import DATA_DIR, TASK_KEYS, tasks_config, topics
-from ..services import dashboard
+import asyncio
+import time
+
+from ..config import DATA_DIR, TASK_KEYS, settings, tasks_config, thresholds, topics
+from ..services import dashboard, gemini_live, llm, transcription
 from ..storage import codes_store, csv_export, session_store
 from ..storage.event_logger import log_admin_event, read_events
 
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
 
-Kind = Literal["turns", "events", "annotations", "survey"]
+Kind = Literal["turns", "sentences", "events", "annotations", "survey"]
 
 
 def _status(code: str) -> dict:
@@ -29,9 +32,42 @@ def _status(code: str) -> dict:
     return {"key": "new", "label": "시작 전"}
 
 
+@router.post("/check-api")
+async def check_api():
+    """두 API에 아주 짧은 호출을 보내 실제로 연결되는지 확인한다 (키가 없거나 MOCK 이면 호출하지 않음)."""
+    async def run(kind: str, fn, enabled: bool, why: str):
+        if not enabled:
+            return {"kind": kind, "ok": None, "detail": why}
+        t0 = time.perf_counter()
+        try:
+            out = await asyncio.wait_for(fn(), timeout=40)
+            return {"kind": kind, "ok": True, "detail": out[:80], "ms": int((time.perf_counter() - t0) * 1000)}
+        except Exception as e:
+            return {"kind": kind, "ok": False, "detail": f"{type(e).__name__}: {str(e)[:200]}", "ms": int((time.perf_counter() - t0) * 1000)}
+
+    async def stt_ping() -> str:
+        # Whisper: 모델 접근 권한만 확인 / 다듬기: 아주 짧은 문장 하나를 다듬어 본다
+        if settings.stt_engine == "whisper":
+            m = await llm.client().models.retrieve(settings.whisper_model)
+            return f"{m.id} 사용 가능"
+        r = await transcription.cleanup("i go to the park yesterday", "daily life", "What did you do yesterday?")
+        return r["text"]
+
+    a = settings.api_status()
+    stt_needed = settings.stt_engine == "whisper" or settings.stt_cleanup
+    chat, fb, stt = await asyncio.gather(
+        run("chat", gemini_live.ping, not settings.mock_chat, "GEMINI_API_KEY 없음" if not a["chat"]["key"] else "MOCK_LLM=1"),
+        run("feedback", llm.ping, not settings.mock_feedback, "OPENAI_API_KEY 없음" if not a["feedback"]["key"] else "MOCK_LLM=1"),
+        run("stt", stt_ping, stt_needed and not settings.mock_feedback,
+            "브라우저 음성 인식만 사용 (API 호출 없음)" if not stt_needed else ("OPENAI_API_KEY 없음" if not a["feedback"]["key"] else "MOCK_LLM=1")),
+    )
+    log_admin_event("check_api", {"chat": chat, "feedback": fb, "stt": stt})
+    return {"api": a, "chat": chat, "feedback": fb, "stt": stt}
+
+
 @router.get("/meta")
 def meta():
-    return {"topics": topics(), "tasks": tasks_config(), "orders": codes_store.VALID_ORDERS}
+    return {"topics": topics(), "tasks": tasks_config(), "orders": codes_store.VALID_ORDERS, "thresholds": thresholds(), "api": settings.api_status()}
 
 
 @router.get("/codes")

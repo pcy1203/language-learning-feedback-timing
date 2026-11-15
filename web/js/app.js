@@ -31,7 +31,7 @@ function render() {
   const aside = h('aside', { class: 'sidebar' });
   const main = h('main', { class: 'main', id: 'main' });
   root.append(h('div', { class: 'shell' }, aside, main));
-  renderSidebar(aside);
+  renderSidebar(aside, { onExit: exit });
   cleanup = page.render(main, ctx);
 }
 
@@ -68,10 +68,29 @@ function logout() {
   render();
 }
 
-const ctx = { render, next, goStep, logout, persistProgress };
+// 참가자 '나가기': 진행 상황은 서버에 저장돼 있으므로, 같은 코드를 다시 입력하면 이어서 진행된다
+function exit() {
+  const msg = state.step === 'chat'
+    ? '대화 중에 나가면 지금 녹음 중인 말은 저장되지 않아요. 대화 시간은 계속 흘러가요.\n같은 코드를 다시 입력하면 이어서 할 수 있어요. 나갈까요?'
+    : '지금까지 진행한 내용은 저장돼 있어요.\n같은 코드를 다시 입력하면 이어서 할 수 있어요. 나갈까요?';
+  if (!window.confirm(msg)) return;
+  logEvent('exit_click', { task_index: state.taskIndex, step: state.step });
+  api.progress().catch(() => {});
+  resetState();
+  render();
+}
+
+const ctx = { render, next, goStep, logout, persistProgress, exit };
 
 document.addEventListener('visibilitychange', () => {
   logEvent('page_visibility', { state: document.visibilityState, step: state.step });
 });
 
+// 새로고침하면 참가자는 코드 입력 화면부터 시작한다.
+// 진행 상태는 서버에 저장돼 있어서, 코드를 입력하면 하던 단계로 이어서 들어간다 (코드는 미리 채워 둠).
+if (state.role === 'participant') {
+  state.resumeCode = state.code;
+  state.role = null;
+}
+save();
 render();
