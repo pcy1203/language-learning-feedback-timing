@@ -90,11 +90,12 @@ export function render(main, ctx) {
     }
     if (fbState === 'seen' || fbState === 'unseen') {
       const unseen = fbState === 'unseen';
-      const summary = fb.items.map((it) => (it.original ? `${it.original} → ${it.revised}` : it.revised)).join(' · ');
+      // 바뀐 부분은 한 줄에 하나씩
+      const changes = fb.items.map((it) => (it.original ? `${it.original} → ${it.revised}` : it.revised));
       body.append(h('div', { class: `ann-fb${unseen ? ' is-unseen' : ''}` },
         h('span', { class: 'title' }, conf.labels[fbState][task]),
         h('p', { class: 'fb-text', lang: 'en' }, highlighted(turn.text, fb.revised, { muted: unseen })),
-        summary ? h('p', { class: 'summary', lang: 'en' }, summary) : null));
+        changes.length ? h('ul', { class: 'summary', lang: 'en' }, changes.map((c) => h('li', {}, c))) : null));
     } else {
       const label = conf.labels[fbState];
       body.append(h('div', { class: 'ann-nofb' }, typeof label === 'string' ? label : label[task]));

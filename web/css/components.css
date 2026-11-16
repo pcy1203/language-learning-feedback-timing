@@ -235,7 +235,7 @@ mark.hl.muted { background: var(--hl-muted); }
 .ann-fb { margin-left: 76px; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--fb-bg); border: 1px solid var(--fb-line-strong); }
 .ann-fb .title { font-size: 12px; font-weight: 700; color: var(--fb-label); }
 .ann-fb .fb-text { font-size: 15px; }
-.ann-fb .summary { font-size: 13px; color: var(--ink-2); }
+.ann-fb .summary { font-size: 13px; color: var(--ink-2); list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .ann-fb.is-unseen { background: #F0F0EE; border: 1px dashed #A9A8A3; }
 .ann-fb.is-unseen .title, .ann-fb.is-unseen .fb-text { color: var(--muted); }
 .ann-fb.is-unseen .summary { color: var(--muted-2); }
