@@ -89,13 +89,13 @@
   "rules": {
     "user": {
       "seen": [
-        "content",
         "intent",
+        "content",
         "seen_help"
       ],
       "unseen": [
-        "content",
         "intent",
+        "content",
         "unseen_help"
       ],
       "checked_no_issue": [
@@ -109,13 +109,13 @@
     },
     "ai": {
       "seen": [
-        "content",
         "intent",
+        "content",
         "need"
       ],
       "unseen": [
-        "content",
         "intent",
+        "content",
         "hidden_need"
       ],
       "no_feedback": [
@@ -125,8 +125,8 @@
     },
     "delayed": {
       "seen": [
-        "content",
         "intent",
+        "content",
         "realtime"
       ],
       "no_feedback": [

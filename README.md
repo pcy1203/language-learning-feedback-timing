@@ -114,7 +114,7 @@ feedback-timing-study/
 
 **피드백 형식** — 간단한 피드백 = 발화 전체를 최소한으로 고친 문장(재구성·명시적 교정, 바뀐 부분 노란색). 자세한 피드백 = 그 위에 바뀐 곳마다 규칙·이유를 한국어로 설명(메타언어적 단서). Delayed 종합 피드백도 메타언어적 단서(반복 패턴 + 규칙 한 문장 + 총평).
 
-**피드백을 줄지**는 AI Decision·Delayed는 피드백 AI의 `needs_feedback` 판단으로, User Trigger는 (이미 요청했으므로) 고친 부분이 있는지로 정해요 (없으면 "고칠 부분이 없어요"). **점수**(L1 의미 전달 영향 · L2 자연스러움 · 시급성, 1–10)는 발화마다 기록만 하고 결정에는 쓰지 않아요. 피드백 AI에게는 그 발화 앞의 최근 8턴(`context_turns`)을 함께 줘요.
+**피드백을 줄지**는 AI Decision·Delayed는 피드백 AI의 `needs_feedback` 판단으로, User Trigger는 (이미 요청했으므로) 고친 부분이 있는지로 정해요 (없으면 "고칠 부분이 없어요"). **점수**(L1 의미 미전달 · L2 부자연스러움 · 시급성, 1–10, **높을수록 피드백이 필요한 쪽**)는 발화마다 기록만 하고 결정에는 쓰지 않아요. 피드백 AI에게는 그 발화 앞의 최근 8턴(`context_turns`)을 함께 줘요.
 
 | 조건 | 언제 만드나 | 프롬프트 | 대화 중 표시 |
 |---|---|---|---|
@@ -129,7 +129,7 @@ feedback-timing-study/
 python tools/score_csv.py learner_sentence.csv                       # User Trigger 프롬프트 (기본)
 python tools/score_csv.py learner_sentence.csv --condition ai --column 발화 --topic 여행
 ```
-추가 열: `l1_meaning` `l2_naturalness` `urgency` · `needs_feedback`(Y/N) · `simple_feedback` `detailed_feedback`(필요할 때만) · `intended_ko` · `rationale`(ai) · `likely_concern`(user) · `error`. 결과 파일은 `입력파일명_scored_{condition}.csv`.
+추가 열: `l1_meaning_breakdown` `l2_unnaturalness` `urgency` · `needs_feedback`(Y/N) · `simple_feedback` `detailed_feedback`(필요할 때만) · `intended_ko` · `rationale`(ai) · `likely_concern`(user) · `error`. 결과 파일은 `입력파일명_scored_{condition}.csv`.
 
 ---
 
@@ -137,6 +137,8 @@ python tools/score_csv.py learner_sentence.csv --condition ai --column 발화 --
 
 ```
 코드 입력 → [Task 1 → Task 2 → Task 3] → 종료 화면(처음으로)
+코드를 입력하면 **연구 소개** 화면이 가장 먼저 나와요 (첫 세션을 시작하기 전까지는 다시 들어와도 여기부터) (전체 진행: 사전 인터뷰 → 튜토리얼 → Session 1~3 → 사후 인터뷰, 세션 흐름: 설명 1분 → 대화 9분 → 피드백 Annotation 3분 → 설문 2분, 실제 화면 사진은 `web/img/overview/`, 누르면 크게 보기).
+
 각 Task: 설명 → 피드백 방식 선택 → 9분 대화 → (Delayed만: 종합 피드백) → 평가(Annotation) → 세션 설문
 ```
 
@@ -153,9 +155,9 @@ python tools/score_csv.py learner_sentence.csv --condition ai --column 발화 --
 
 | 조건 | 봤음 | 못 봤음 | 요청했지만 피드백 없음 | 피드백 없음 |
 |---|---|---|---|---|
-| User Trigger | 내용 · 의도 · 본 것이 도움 됐나 | (요청하지 않은 발화, 세션 후 생성) 내용 · 의도 · 봤다면 도움 됐을까 | 의도 · 피드백이 있어야 했나 | 의도 · 피드백이 있어야 했나 |
-| AI Decision | 내용 · 의도 · 이 시점에 필요했나 | (세션 종료 뒤 늦게 생성된 경우만) | — | 의도 · 피드백이 있어야 했나 |
-| Delayed | 내용 · 의도 · 실시간이었다면 유용했을까 | — | — | 의도 · 피드백이 있어야 했나 |
+| User Trigger | 의도 · 내용 · 본 것이 도움 됐나 | (요청하지 않은 발화, 세션 후 생성) 의도 · 내용 · 봤다면 도움 됐을까 | 의도 · 피드백이 있어야 했나 | 의도 · 피드백이 있어야 했나 |
+| AI Decision | 의도 · 내용 · 이 시점에 필요했나 | (세션 종료 뒤 늦게 생성된 경우만) | — | 의도 · 피드백이 있어야 했나 |
+| Delayed | 의도 · 내용 · 실시간이었다면 유용했을까 | — | — | 의도 · 피드백이 있어야 했나 |
 
 ### 세션 설문 (`survey.json`)
 각 Task가 끝날 때마다(진한 색 띠로 구분): 리커트 1–5 (학습 도움 · 시점 적절성 · 부담감 · 흐름 방해) + 좋았던 점 / 아쉬운 점 / 그 밖에 하고 싶은 말.
@@ -165,8 +167,8 @@ python tools/score_csv.py learner_sentence.csv --condition ai --column 발화 --
 ## 6. Admin (`admin` 입력)
 - **API 상태 줄**: 대화 AI·피드백 모델과 키 연결 여부, AI 음성 방식, **연결 확인**(실제 호출 테스트)
 - **참가자 코드**: Task 순서(6가지) + Task별 주제 → 6자리 코드 생성, 메모, 삭제(로그 파일은 남음)
-- **대시보드**: 조건 비교 표(세션 시간, 발화 수·길이, 피드백을 만든 발화와 그중 필요 판단 비율, 평균 L1·L2·시급성, 생성 시간, 노출·요청 비율), 세션 설문 평균, **발화별 L1·L2·시급성 점수 분포**, Annotation 선택 비율. '완료한 참가자만' 필터, 요약 CSV
-- **로그**: Task별 대화·**참가자 녹음 재생**·전사 원문(다듬기 전/Whisper 미리보기)·피드백·**점수·필요 판단·근거(AI Decision)·추정한 궁금증(User Trigger)·생성 시점**·요청/노출 여부·Annotation 응답·설문, 이벤트 타임라인
+- **대시보드**: 조건 비교 표(세션 시간, 발화 수·길이, 피드백 필요 판단 비율, 평균 L1·L2·시급성, 생성 시간, 노출·요청 비율, 방식 전환 간단→자세한 / 자세한→간단, 요청하기까지 걸린 시간), 세션 설문 평균, **발화별 점수 분포**(전체 + 조건별 묶음: User Trigger 누름/안 누름 · AI Decision 제시/미제시 · Delayed 전체), **AI Decision 판단과 학습자 판단 일치표**, Annotation 선택 비율(의도 → 내용 → 시점 순). '완료한 참가자만' 필터, 요약 CSV
+- **로그**: Task별 대화 · 피드백 · 점수 막대(L1·L2·시급성) · 필요 판단과 근거(AI Decision) · 추정한 궁금증(User Trigger) · 생성 시점 · 요청/노출 여부 · Annotation 응답(질문 순서대로) · 전사 원문과 녹음(카드 아래 작게) · 설문. 오른쪽에 **이 참가자의 발화별 점수 분포**와 이벤트 타임라인
 - **CSV**: 참가자별 `turns`(대화·피드백·점수·판단 근거·전사 방식·녹음 파일 이름) / `events` / `annotations` / `survey`, Task별, 참가자 ZIP(녹음 파일 포함), 전체 참가자 통합. 엑셀용 UTF-8 BOM
 
 **기록 보존**: 모든 기록은 `data/` 파일에 바로 저장되고, 화면은 요청마다 파일을 다시 읽어요. 서버를 껐다 켜도 그대로 보이고, 만들지 못한 피드백은 요청하거나 세션을 종료할 때 다시 만들어요. 관리자 로그인도 `data/admin_tokens.json`에 저장돼 유지돼요(14일). 백업은 `data/` 폴더 통째로.

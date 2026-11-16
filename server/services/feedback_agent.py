@@ -6,7 +6,7 @@
 
 피드백을 줄지는 AI Decision · Delayed 는 모델의 needs_feedback 으로, User Trigger 는 고친 부분이 있는지로 정한다
 (요청한 발화이므로 판단 단계 없이 고칠 게 있으면 고치고, 없으면 원문 그대로 돌려받는다).
-점수(의미 L1 · 자연스러움 L2 · 시급성)는 기록만 하고 결정에 쓰지 않는다.
+점수(L1 의미 미전달 · L2 부자연스러움 · 시급성, 1~10 · 높을수록 피드백이 필요한 쪽)는 기록만 하고 결정에 쓰지 않는다.
 has_issue = (피드백 필요) 이고 고친 문장에 실제로 바뀐 부분이 있을 때.
 """
 import re
@@ -73,7 +73,8 @@ def normalize(raw: dict, utterance: str, task: str) -> dict:
         "revised": revised if has_issue else utterance,
         "items": _items(raw.get("items")) if has_issue else [],
         "intended_meaning": _text(raw.get("intended_ko")),
-        "scores": {"l1": _score(sc.get("meaning")), "l2": _score(sc.get("naturalness")), "urgency": _score(sc.get("urgency"))},
+        "scores": {"l1": _score(sc.get("meaning_breakdown", sc.get("meaning"))), "l2": _score(sc.get("unnaturalness", sc.get("naturalness"))),
+                   "urgency": _score(sc.get("urgency"))},
     }
     if task == "ai":
         fb["rationale"] = _text(raw.get("rationale"))

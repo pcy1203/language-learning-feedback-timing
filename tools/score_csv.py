@@ -16,7 +16,7 @@
     - (선택) 주제: --topic (기본: 일상 대화)
 
 출력 CSV (기본: 입력파일명_scored_{condition}.csv) — 원래 열은 그대로 두고 오른쪽에 추가
-    l1_meaning, l2_naturalness, urgency   점수 1~10 (기록용, 피드백 결정에는 쓰지 않음)
+    l1_meaning_breakdown, l2_unnaturalness, urgency   점수 1~10 (높을수록 피드백이 필요한 쪽, 기록용)
     needs_feedback                모델이 피드백이 필요하다고 판단했으면 Y
     simple_feedback               고친 발화 (간단한 피드백, 필요 없으면 빈칸)
     detailed_feedback             고친 발화 + 바뀐 부분별 한국어 이유 (자세한 피드백)
@@ -41,7 +41,7 @@ from server.services import feedback_agent  # noqa: E402
 CANDIDATES = ("sentence", "utterance", "text", "발화", "문장")
 TYPE_LABEL = {"meaning": "의미 전달", "expression": "더 나은 표현"}
 OUT_COLUMNS = [
-    "l1_meaning", "l2_naturalness", "urgency", "needs_feedback",
+    "l1_meaning_breakdown", "l2_unnaturalness", "urgency", "needs_feedback",
     "simple_feedback", "detailed_feedback", "intended_ko", "rationale", "likely_concern", "error",
 ]
 
@@ -71,7 +71,7 @@ async def score_row(text: str, context: str, topic: str, condition: str) -> dict
     fb = await feedback_agent.generate(condition, {"label": topic}, ctx, text)
     sc = fb["scores"]
     return {
-        "l1_meaning": sc["l1"], "l2_naturalness": sc["l2"], "urgency": sc["urgency"],
+        "l1_meaning_breakdown": sc["l1"], "l2_unnaturalness": sc["l2"], "urgency": sc["urgency"],
         "needs_feedback": "Y" if fb["has_issue"] else "N",
         "simple_feedback": fb["revised"] if fb["has_issue"] else "",
         "detailed_feedback": detailed_text(fb) if fb["has_issue"] else "",

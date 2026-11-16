@@ -1,4 +1,4 @@
-// 화면 전환: 로그인 → (Admin) / (참가자: Task별 설명 → 방식 선택 → 대화 → [종합 피드백] → 평가 → 설문) → 종료
+// 화면 전환: 로그인 → (Admin) / (참가자: 연구 소개 → Task별 설명 → 방식 선택 → 대화 → [종합 피드백] → 평가 → 설문) → 종료
 import { api } from './api.js';
 import { state, save, resetState, currentTask, stepsFor } from './state.js';
 import { h, clear } from './lib/dom.js';
@@ -13,6 +13,7 @@ import * as delayedSummary from './pages/delayed-summary.js';
 import * as annotation from './pages/annotation.js';
 import * as survey from './pages/survey.js';
 import * as done from './pages/done.js';
+import * as overview from './pages/overview.js';
 
 const PAGES = { intro: taskIntro, mode: modeSelect, chat, summary: delayedSummary, annotation, survey };
 const root = document.getElementById('app');
@@ -26,6 +27,7 @@ function render() {
   if (!state.role) { cleanup = login.render(root, ctx); return; }
   if (state.role === 'admin') { cleanup = admin.render(root, ctx); return; }
   if (state.finished) { cleanup = done.render(root, ctx); return; }
+  if (state.step === 'overview') { cleanup = overview.render(root, ctx); return; }
 
   const page = PAGES[state.step] || taskIntro;
   const aside = h('aside', { class: 'sidebar' });
@@ -49,6 +51,11 @@ function goStep(step) {
 function next() {
   const steps = stepsFor(currentTask());
   const i = steps.indexOf(state.step);
+  // Task 단계가 아닌 화면(연구 소개 등)에서 넘어가면 지금 Task의 설명부터 (다음 Task로 건너뛰지 않게)
+  if (i < 0) {
+    goStep('intro');
+    return;
+  }
   if (i >= 0 && i < steps.length - 1) {
     goStep(steps[i + 1]);
     return;

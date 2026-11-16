@@ -27,7 +27,7 @@ def _status(code: str) -> dict:
     sessions = session_store.all_sessions(code)
     if state.get("finished"):
         return {"key": "done", "label": "완료"}
-    if sessions or state.get("task_index", 0) > 0 or state.get("step") != "intro":
+    if sessions or state.get("task_index", 0) > 0 or state.get("step") not in ("overview", "intro"):
         return {"key": "progress", "label": f"Task {state.get('task_index', 0) + 1} 진행 중"}
     return {"key": "new", "label": "시작 전"}
 

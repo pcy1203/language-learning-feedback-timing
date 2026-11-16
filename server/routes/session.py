@@ -46,6 +46,10 @@ def login(body: LoginIn):
         return {"role": "admin", "token": issue_admin_token(), "mock": settings.mock}
     p = get_participant(code)
     state = session_store.load_state(p["code"])
+    # 아직 첫 세션을 시작하지 않았다면 항상 연구 소개부터 (예전에 만든 코드나 설명 화면에서 나갔다 온 경우 포함)
+    if not state.get("finished") and state.get("task_index", 0) == 0 and state.get("step") in ("overview", "intro") \
+            and not session_store.all_sessions(p["code"]):
+        state["step"] = "overview"
     log_event(p["code"], "login", {"state": state})
     return {"role": "participant", "participant": public_participant(p), "state": state, "config": participant_config()}
 

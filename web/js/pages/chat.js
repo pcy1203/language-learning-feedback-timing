@@ -172,7 +172,7 @@ export function render(main, ctx) {
       const sc = r.scores;
       box.replaceChildren(
         h('span', { class: 'th' }, `TEST · ${r.has_issue ? '피드백 있음' : '피드백 없음'} (점수는 기록용)`),
-        h('span', { class: 'row' }, h('span', {}, `L1 의미 ${sc.l1 ?? '—'}`), h('span', {}, `L2 자연스러움 ${sc.l2 ?? '—'}`), h('span', {}, `시급성 ${sc.urgency ?? '—'}`)));
+        h('span', { class: 'row' }, h('span', {}, `L1 의미 미전달 ${sc.l1 ?? '—'}`), h('span', {}, `L2 부자연스러움 ${sc.l2 ?? '—'}`), h('span', {}, `시급성 ${sc.urgency ?? '—'}`)));
     }).catch((err) => { box.textContent = `점수를 불러오지 못했어요 · ${err.message}`; });
   }
 

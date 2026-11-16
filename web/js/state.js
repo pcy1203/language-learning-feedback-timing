@@ -8,7 +8,7 @@ const initial = () => ({
   participant: null,     // { code, order: ['user','ai','delayed'], topics, topic_labels }
   config: null,          // { study_title, settings, tasks, survey, annotation }
   taskIndex: 0,
-  step: 'intro',
+  step: 'overview',      // 처음 로그인하면 연구 소개부터
   finished: false,
   modes: {},             // { user: 'simple', ai: 'detailed', ... }
 });
@@ -39,6 +39,7 @@ export function currentTask() {
 }
 
 export const STEP_LABELS = {
+  overview: '연구 소개',
   intro: '설명',
   mode: '피드백 방식 선택',
   chat: '대화',

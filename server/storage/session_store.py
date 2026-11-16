@@ -14,7 +14,7 @@ from ..config import DATA_DIR, TASK_KEYS
 _file_lock = threading.Lock()
 _async_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
-DEFAULT_STATE = {"task_index": 0, "step": "intro", "finished": False, "modes": {}}
+DEFAULT_STATE = {"task_index": 0, "step": "overview", "finished": False, "modes": {}}
 
 
 def participant_dir(code: str) -> Path:

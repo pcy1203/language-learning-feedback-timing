@@ -81,10 +81,7 @@ export function render(main, ctx) {
         h('div', { class: 'who' }, h('b', {}, '나'), turn.recording_url ? playButton(turn.recording_url, onPlay) : null),
         h('div', { class: 'col' },
           h('p', { lang: 'en' }, turn.text),
-          fb?.intended_meaning ? h('p', { class: 'ann-intent' }, h('b', {}, 'AI가 이해한 의도'), ' · ', fb.intended_meaning) : null,
-          // AI Decision: 피드백을 보여주거나 보여주지 않기로 한 근거
-          task === 'ai' && fb?.rationale ? h('p', { class: 'ann-intent ann-rationale' },
-            h('b', {}, fb.has_issue ? 'AI가 피드백을 보여준 이유' : 'AI가 피드백을 보여주지 않은 이유'), ' · ', fb.rationale) : null)));
+          fb?.intended_meaning ? h('p', { class: 'ann-intent' }, h('b', {}, 'AI가 이해한 의도'), ' · ', fb.intended_meaning) : null)));
 
     const fbState = feedbackState(task, turn);
     if (!fbState) {
@@ -101,6 +98,11 @@ export function render(main, ctx) {
     } else {
       const label = conf.labels[fbState];
       body.append(h('div', { class: 'ann-nofb' }, typeof label === 'string' ? label : label[task]));
+    }
+    // AI Decision: 피드백을 보여주거나 보여주지 않기로 한 근거 (의도 → 피드백 → 근거 순서)
+    if (task === 'ai' && fb?.rationale) {
+      body.append(h('p', { class: 'ann-intent ann-rationale' },
+        h('b', {}, fb.has_issue ? 'AI가 피드백을 보여준 이유' : 'AI가 피드백을 보여주지 않은 이유'), ' · ', fb.rationale));
     }
     const keys = (conf.rules[task] || {})[fbState] || [];
     return h('li', { class: 'ann-turn' }, body,

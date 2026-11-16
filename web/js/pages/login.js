@@ -56,7 +56,7 @@ export function render(root, ctx) {
           participant: res.participant,
           config: res.config,
           taskIndex: res.state.task_index || 0,
-          step: res.state.step || 'intro',
+          step: res.state.step || 'overview',
           finished: !!res.state.finished,
           modes: res.state.modes || {},
         });
@@ -87,7 +87,8 @@ export function render(root, ctx) {
           input, resumeNote, error, submit),
         sttWarn,
         h('ul', { class: 'notes' }, notes),
-        state.testMode ? h('p', { class: 'notice', style: { background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'var(--accent-line)' } }, '테스트 모드 · 대화 화면에서 발화 아래에 L1·L2·시급성 점수가 보여요') : null,
-        statusSlot))));
+        state.testMode ? h('p', { class: 'notice', style: { background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'var(--accent-line)' } }, '테스트 모드 · 대화 화면에서 발화 아래에 L1·L2·시급성 점수가 보여요') : null)),
+    // 모델 · API 연결 상태는 맨 아래에 작고 흐리게 (연구자 확인용)
+    h('footer', { class: 'login-foot' }, statusSlot)));
   input.focus();
 }

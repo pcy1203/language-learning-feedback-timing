@@ -46,7 +46,7 @@ def feedback_raw(utterance: str, task: str) -> dict:
     needs = bool(items)
     out = {
         "intended_ko": f"(MOCK 의도) {utterance[:40]}",
-        "scores": {"meaning": 6 if meaning else 2, "naturalness": 6 if needs else 2, "urgency": 7 if meaning else (4 if needs else 1)},
+        "scores": {"meaning_breakdown": 6 if meaning else 2, "unnaturalness": 6 if needs else 2, "urgency": 7 if meaning else (4 if needs else 1)},
         "needs_feedback": needs,
         "revised": revised[:1].upper() + revised[1:] if needs else utterance,
         "items": items,

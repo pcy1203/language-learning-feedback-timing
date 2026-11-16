@@ -6,11 +6,16 @@ import { toast } from '../lib/toast.js';
 import { highlighted } from '../lib/diff.js';
 import { renderDashboard } from './admin-dashboard.js';
 import { apiStatus } from '../components/api-status.js';
+import { scoreHist, scoreLegend, sessionScoreSeries, SCORE_LABEL } from '../components/score-hist.js';
+import { playButton } from '../components/message-bubble.js';
+import { playClip } from '../lib/audio-player.js';
 
 const KIND_LABEL = { turns: '대화·피드백', events: '이벤트', annotations: 'Annotation', survey: '설문' };
 const VIA_LABEL = { request: '요청해서 확인', ai: 'AI가 보여줌', summary: '종합 피드백에서 확인' };
 const STATE_LABEL = { seen: '봤음', unseen: '못 봤음', checked_no_issue: '요청 · 고칠 부분 없음', no_feedback: '피드백 없음' };
-const Q_LABEL = { content: '내용', intent: '의도', seen_help: '본 것이', unseen_help: '봤다면', need: '필요성', hidden_need: '보여줬어야', realtime: '실시간이었다면', should_have: '피드백이' };
+// Annotation 질문: 참가자 화면과 같은 순서 (의도 → 내용 → 시점)
+const Q_ORDER = ['intent', 'content', 'seen_help', 'unseen_help', 'need', 'hidden_need', 'realtime', 'should_have'];
+const Q_LABEL = { intent: 'AI가 이해한 의도가', content: '피드백 내용이', seen_help: '이 피드백을 본 것은', unseen_help: '이 피드백을 봤다면', need: '이 시점에 피드백이', hidden_need: '이 피드백을 대화 중에', realtime: '대화 중에 바로 받았다면', should_have: '이 발화에 피드백이' };
 
 function feedbackState(task, t) {
   const fb = t.feedback;
@@ -22,17 +27,38 @@ function feedbackState(task, t) {
 
 const PURPOSE_LABEL = { live: '발화 직후 생성', request: '요청 시 생성', annotation: '세션 후 생성 (Annotation용)' };
 
-// 점수(기록용) · 피드백 필요 판단 · 근거
+// 점수 한 칸: 이름 + 1~10 막대 + 숫자
+function scoreMeter(label, v) {
+  return h('div', { class: 'meter' },
+    h('span', { class: 'meter-label' }, label),
+    h('span', { class: 'meter-track' }, h('span', { class: 'meter-fill', style: { width: `${((v || 0) / 10) * 100}%` } })),
+    h('b', {}, v ?? '—'));
+}
+
+// 점수(기록용) · 피드백 필요 판단 · 생성 시점 · 근거
 function scoreBox(fb, t) {
   const sc = fb.scores || {};
+  const meta = [
+    t.feedback_purpose ? PURPOSE_LABEL[t.feedback_purpose] || t.feedback_purpose : null,
+    t.feedback_latency_ms ? `생성 ${(t.feedback_latency_ms / 1000).toFixed(1)}초` : null,
+  ].filter(Boolean).join(' · ');
   return h('div', { class: 'score-box' },
-    h('div', { class: 'score-row' },
-      h('span', {}, `L1 의미 ${sc.l1 ?? '—'}`), h('span', {}, `L2 자연스러움 ${sc.l2 ?? '—'}`), h('span', {}, `시급성 ${sc.urgency ?? '—'}`),
-      h('span', { class: fb.needs_feedback ? 'need' : '' }, fb.needs_feedback ? '피드백 필요' : '피드백 불필요'),
-      t.feedback_purpose ? h('span', { class: 'muted' }, PURPOSE_LABEL[t.feedback_purpose] || t.feedback_purpose) : null,
-      t.feedback_latency_ms ? h('span', { class: 'muted' }, `${(t.feedback_latency_ms / 1000).toFixed(1)}초`) : null),
-    fb.rationale ? h('p', {}, h('b', {}, '판단 근거 '), fb.rationale) : null,
-    fb.likely_concern ? h('p', {}, h('b', {}, '추정한 궁금증 '), fb.likely_concern) : null);
+    h('div', { class: 'score-top' },
+      h('span', { class: `need-badge${fb.has_issue ? ' on' : ''}` }, fb.has_issue ? '피드백 있음' : '피드백 없음'),
+      meta ? h('span', { class: 'muted' }, meta) : null),
+    h('div', { class: 'meters' }, scoreMeter('L1 의미 미전달', sc.l1), scoreMeter('L2 부자연스러움', sc.l2), scoreMeter('시급성', sc.urgency)),
+    fb.rationale ? h('p', { class: 'why' }, h('b', {}, 'AI 판단 근거'), fb.rationale) : null,
+    fb.likely_concern ? h('p', { class: 'why' }, h('b', {}, '추정한 궁금증'), fb.likely_concern) : null);
+}
+
+// Annotation 응답: 상태 + 질문별 답 (의도 → 내용 → 시점 순)
+function annotationBox(state, answers) {
+  if (!state && !answers.length) return null;
+  const rows = [...answers].sort((a, b) => Q_ORDER.indexOf(a.key) - Q_ORDER.indexOf(b.key)).map((a) =>
+    h('div', { class: 'ann-row' }, h('span', {}, Q_LABEL[a.key] || a.key), h('b', { class: a.value === 0 ? 'good' : 'bad' }, a.label)));
+  return h('div', { class: 'ann-box' },
+    h('div', { class: 'ann-box-head' }, h('b', {}, 'Annotation'), state ? h('span', {}, STATE_LABEL[state]) : null),
+    rows.length ? rows : h('span', { class: 'muted' }, '응답 없음'));
 }
 
 function dlLink(href, label, { primary = false, small = false } = {}) {
@@ -299,10 +325,17 @@ export function render(root, ctx) {
     ];
   }
 
+  // 이 참가자 · 이 Task의 발화별 점수 분포 (조건별 묶음: 누름/안 누름, 제시/미제시, 전체)
+  function scorePanel(task, session) {
+    const series = sessionScoreSeries(task, session.turns);
+    return h('div', { class: 'score-panel' },
+      h('div', { class: 'log-col-head' }, h('h2', {}, '발화별 점수 분포'), scoreLegend(series('l1'))),
+      ['l1', 'l2', 'urgency'].map((k) => scoreHist({ title: SCORE_LABEL[k], series: series(k), height: 56, compact: true })));
+  }
+
   function taskPanel(code, task, session, events) {
     if (!session) return h('p', { class: 'empty' }, '아직 시작하지 않은 Task예요.');
     const answers = session.annotation?.answers || [];
-    const qLabel = (key) => Q_LABEL[key] || key;
 
     const turnCards = session.turns.map((t) => {
       if (t.role === 'ai') {
@@ -311,23 +344,18 @@ export function render(root, ctx) {
           h('p', { lang: 'en' }, t.text));
       }
       const fb = t.feedback;
-      const tags = [];
       const st = feedbackState(task, t);
-      if (!fb) tags.push(h('span', {}, t.feedback_status === 'error' ? '피드백 오류' : t.feedback_status === 'not_requested' ? '요청 안 함 · 피드백 없음' : '피드백 대기'));
-      else if (!fb.has_issue) tags.push(h('span', {}, '고칠 부분 없음 · 피드백 없음'));
-      else if (t.shown) tags.push(h('span', { class: 'seen' }, VIA_LABEL[t.shown_via] || '확인함'));
-      else tags.push(h('span', {}, '생성됨 · 확인 안 함'));
+      // 피드백 진행 상황: 요청 · 노출 경로 · AI 결정
+      const tags = [];
+      if (!fb) tags.push(h('span', {}, t.feedback_status === 'error' ? '피드백 오류' : t.feedback_status === 'not_requested' ? '요청 안 함' : '피드백 대기'));
+      else if (fb.has_issue && t.shown) tags.push(h('span', { class: 'seen' }, VIA_LABEL[t.shown_via] || '확인함'));
+      else if (fb.has_issue) tags.push(h('span', {}, '확인 안 함'));
       if (task === 'user' && (t.requested || t.shown_via === 'request')) {
         tags.push(h('span', { class: 'seen' }, `피드백 보기 누름${t.request_count > 1 ? ` ×${t.request_count}` : ''} · ${fmtClock(t.requested_at || t.shown_at)}`));
-      } else if (task === 'user' && fb) {
+      } else if (task === 'user') {
         tags.push(h('span', {}, '피드백 보기 안 누름'));
       }
-      if (st) tags.push(h('span', {}, `Annotation 상태: ${STATE_LABEL[st]}`));
-      if (t.intervention) tags.push(h('span', { class: t.intervention.show ? 'seen' : '' }, `AI Decision: ${t.intervention.show ? '보여줌' : '안 보여줌'}`));
-      answers.filter((a) => a.turn_id === t.id).forEach((a) => {
-        const good = a.value === 0;
-        tags.push(h('span', { class: good ? 'good' : 'bad' }, `${qLabel(a.key)}: ${a.label}`));
-      });
+      if (t.intervention) tags.push(h('span', { class: t.intervention.show ? 'seen' : '' }, `AI 결정: ${t.intervention.show ? '보여줌' : '안 보여줌'}`));
       return h('div', { class: 'turn-card' },
         h('div', { class: 'head' },
           h('span', {}, `#${t.id}`), h('b', {}, '참가자'), h('span', {}, fmtClock(t.ts)),
@@ -335,14 +363,20 @@ export function render(root, ctx) {
           t.input === 'typed' ? h('span', {}, '직접 입력') : null,
           t.stt_engine && t.stt_engine !== 'typed' ? h('span', {}, t.stt_engine === 'whisper' ? 'Whisper 전사' : (t.stt_cleaned ? '브라우저 전사 · 다듬음' : '브라우저 전사')) : null),
         h('p', { lang: 'en' }, t.text),
-        t.stt_raw && t.stt_raw !== t.text ? h('p', { class: 'stt-raw', lang: 'en' }, h('b', {}, '다듬기 전 '), t.stt_raw) : null,
-        t.stt_preview && t.stt_preview !== t.text ? h('p', { class: 'stt-raw', lang: 'en' }, h('b', {}, '브라우저 미리보기 '), t.stt_preview) : null,
-        t.recording_url ? h('div', { class: 'rec-row' },
-          h('audio', { controls: true, preload: 'none', src: t.recording_url }),
-          h('span', {}, t.recording?.name || '')) : null,
         fb?.has_issue ? h('p', { class: 'revised', lang: 'en' }, highlighted(t.text, fb.revised)) : null,
+        h('div', { class: 'tags' }, tags),
         fb ? scoreBox(fb, t) : null,
-        h('div', { class: 'tags' }, tags));
+        annotationBox(st, answers.filter((a) => a.turn_id === t.id)),
+        // 전사 원문 · 녹음은 아래에 작게
+        (t.stt_raw && t.stt_raw !== t.text) || (t.stt_preview && t.stt_preview !== t.text) || t.recording_url
+          ? h('div', { class: 'turn-foot' },
+            t.stt_raw && t.stt_raw !== t.text ? h('p', { class: 'stt-raw', lang: 'en' }, h('b', {}, '다듬기 전 '), t.stt_raw) : null,
+            t.stt_preview && t.stt_preview !== t.text ? h('p', { class: 'stt-raw', lang: 'en' }, h('b', {}, '브라우저 미리보기 '), t.stt_preview) : null,
+            t.recording_url ? h('div', { class: 'rec-row' },
+              playButton(t.recording_url, (url) => playClip(url), { label: '녹음 듣기' }),
+              h('a', { href: t.recording_url, download: t.recording?.name || '' }, t.recording?.name || '내려받기'),
+              t.recording?.seconds ? h('span', {}, `${t.recording.seconds}초`) : null) : null)
+          : null);
     });
 
     const sv = session.survey;
@@ -366,7 +400,8 @@ export function render(root, ctx) {
           dlLink(`/api/admin/export/${code}/turns.csv?task=${task}`, '이 Task CSV', { small: true })),
         turnCards,
         surveyBox),
-      h('section', { class: 'log-col events-col', 'aria-label': '이벤트 로그' },
+      h('section', { class: 'log-col events-col', 'aria-label': '점수 분포와 이벤트 로그' },
+        scorePanel(task, session),
         h('div', { class: 'log-col-head' },
           h('h2', {}, '이벤트 ', h('span', {}, `${evs.length}건`)),
           dlLink(`/api/admin/export/${code}/events.csv?task=${task}`, '이 Task CSV', { small: true })),
