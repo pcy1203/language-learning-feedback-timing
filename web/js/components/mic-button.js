@@ -14,7 +14,7 @@ export function createMicButton({ onClick }) {
     ring.hidden = stateName !== 'rec';
     if (stateName === 'rec') {
       btn.append(h('span', { class: 'stop', 'aria-hidden': 'true' }));
-      btn.setAttribute('aria-label', '말하기 끝내고 보내기');
+      btn.setAttribute('aria-label', '발화 마무리하기');
       btn.disabled = false;
     } else {
       btn.append(icon('mic', 26));

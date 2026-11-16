@@ -1,7 +1,7 @@
 """Admin 대시보드: data/ 의 로그 파일을 읽어 조건(User Trigger / AI Decision / Delayed)별로 집계한다."""
 from statistics import mean, pstdev
 
-from ..config import TASK_KEYS, annotation_config, survey_config, tasks_config, thresholds
+from ..config import TASK_KEYS, annotation_config, survey_config, tasks_config
 from ..storage import codes_store, session_store
 from ..storage.event_logger import read_events
 
@@ -55,10 +55,11 @@ def _condition_stats(task: str, sessions: list[tuple[dict, dict]], toggles: dict
         "issue_rate": _rate(len(issues), len(with_fb)),
         "shown_live": len(shown_live),
         "shown_live_rate": _rate(len(shown_live), len(issues)),
-        "avg_max_l1": _avg([t["feedback"].get("max_l1") for _, t in with_fb]),
-        "avg_max_l2": _avg([t["feedback"].get("max_l2") for _, t in with_fb]),
-        "sentences": sum(len(t["feedback"].get("sentences", [])) for _, t in with_fb),
-        "flagged_sentences": sum(t["feedback"].get("flagged_sentences", 0) for _, t in with_fb),
+        "feedback_generated": len(with_fb),
+        "avg_l1": _avg([(t["feedback"].get("scores") or {}).get("l1") for _, t in with_fb]),
+        "avg_l2": _avg([(t["feedback"].get("scores") or {}).get("l2") for _, t in with_fb]),
+        "avg_urgency": _avg([(t["feedback"].get("scores") or {}).get("urgency") for _, t in with_fb]),
+        "avg_latency_ms": _avg([t.get("feedback_latency_ms") for _, t in with_fb]),
         "detailed_start_rate": _rate(sum(1 for m in start_modes if m == "detailed"), len(start_modes)),
         "avg_mode_toggles": _avg([toggles.get((s.get("code"), task), 0) for _, s in sessions]),
     }
@@ -123,21 +124,21 @@ def _annotation(task_sessions: dict[str, list]) -> dict:
 
 
 def _score_dist(task_sessions: dict[str, list]) -> dict:
-    """문장별 L1·L2 점수 분포 (1~10). 기준값 N을 정할 때 참고."""
+    """발화별 L1(의미) · L2(자연스러움) · 시급성 점수 분포 (1~10). 기록만 하고 피드백 결정에는 쓰지 않는다."""
+    keys = ("l1", "l2", "urgency")
     out = {}
     for task, sessions in task_sessions.items():
-        l1, l2 = [0] * 10, [0] * 10
+        dist = {k: [0] * 10 for k in keys}
         for _, s in sessions:
             for t in s.get("turns", []):
-                for se in ((t.get("feedback") or {}).get("sentences") or []):
-                    a, b = se.get("l1", {}).get("score"), se.get("l2", {}).get("score")
-                    if isinstance(a, int) and 1 <= a <= 10:
-                        l1[a - 1] += 1
-                    if isinstance(b, int) and 1 <= b <= 10:
-                        l2[b - 1] += 1
-        out[task] = {"L1": l1, "L2": l2}
-    total = {"L1": [sum(out[k]["L1"][i] for k in out) for i in range(10)], "L2": [sum(out[k]["L2"][i] for k in out) for i in range(10)]}
-    return {"by_condition": out, "all": total, "thresholds": thresholds()}
+                sc = (t.get("feedback") or {}).get("scores") or {}
+                for k in keys:
+                    v = sc.get(k)
+                    if isinstance(v, int) and 1 <= v <= 10:
+                        dist[k][v - 1] += 1
+        out[task] = dist
+    total = {k: [sum(out[t][k][i] for t in out) for i in range(10)] for k in keys}
+    return {"by_condition": out, "all": total}
 
 
 def build(only_finished: bool = False) -> dict:
@@ -191,7 +192,7 @@ def summary_rows(data: dict) -> list[dict]:
                 rows.append({"section": "likert", "condition": tasks[task]["name"], "metric": f"{key}.{m}", "value": st[m]})
             rows.append({"section": "likert", "condition": tasks[task]["name"], "metric": f"{key}.dist", "value": str(st["dist"])})
     for task, dist in data["scores"]["by_condition"].items():
-        for crit in ("L1", "L2"):
+        for crit in ("l1", "l2", "urgency"):
             for i, n in enumerate(dist[crit]):
                 rows.append({"section": "score_distribution", "condition": tasks[task]["name"], "metric": f"{crit}={i + 1}", "value": n})
     for task, groups in data["annotation"].items():

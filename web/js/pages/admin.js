@@ -7,7 +7,7 @@ import { highlighted } from '../lib/diff.js';
 import { renderDashboard } from './admin-dashboard.js';
 import { apiStatus } from '../components/api-status.js';
 
-const KIND_LABEL = { turns: '대화·피드백', sentences: '문장별 점수', events: '이벤트', annotations: 'Annotation', survey: '설문' };
+const KIND_LABEL = { turns: '대화·피드백', events: '이벤트', annotations: 'Annotation', survey: '설문' };
 const VIA_LABEL = { request: '요청해서 확인', ai: 'AI가 보여줌', summary: '종합 피드백에서 확인' };
 const STATE_LABEL = { seen: '봤음', unseen: '못 봤음', checked_no_issue: '요청 · 고칠 부분 없음', no_feedback: '피드백 없음' };
 const Q_LABEL = { content: '내용', intent: '의도', seen_help: '본 것이', unseen_help: '봤다면', need: '필요성', hidden_need: '보여줬어야', realtime: '실시간이었다면', should_have: '피드백이' };
@@ -20,24 +20,19 @@ function feedbackState(task, t) {
   return 'no_feedback';
 }
 
-// 문장별 L1·L2 점수와 채점 근거 (기준 이상은 진하게)
-function sentenceTable(fb) {
-  const th = fb.thresholds || {};
-  const cell = (score, n) => h('td', { class: `sc${score >= n ? ' hit' : ''}` }, String(score));
-  return h('details', { class: 'sent-scores' },
-    h('summary', {}, `문장별 점수 · 최고 L1 ${fb.max_l1} · L2 ${fb.max_l2} (기준 ${th.L1}/${th.L2}) · 피드백 대상 ${fb.flagged_sentences}문장`),
-    h('table', {},
-      h('thead', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, '문장'), h('th', {}, 'L1'), h('th', {}, 'L2'), h('th', {}, '채점 근거'))),
-      h('tbody', {}, fb.sentences.map((s) => h('tr', { class: s.flagged ? 'flagged' : '' },
-        h('td', {}, String(s.index)),
-        h('td', { lang: 'en' }, s.original, s.changed ? h('div', { class: 'rev' }, '→ ', s.revised) : null),
-        cell(s.l1.score, th.L1),
-        cell(s.l2.score, th.L2),
-        h('td', { class: 'why' },
-          h('div', {}, h('b', {}, '청자 '), s.l1.literal_ko || '—',
-            s.l1.other_interpretation ? ' · 다른 해석 가능' : '', s.l1.needs_effort ? ' · 노력 필요' : ''),
-          h('div', {}, h('b', {}, '화자 '), s.l1.intended_ko || '—'),
-          s.l2.natural_revision ? h('div', { lang: 'en' }, h('b', {}, '자연 '), s.l2.natural_revision) : null))))));
+const PURPOSE_LABEL = { live: '발화 직후 생성', request: '요청 시 생성', annotation: '세션 후 생성 (Annotation용)' };
+
+// 점수(기록용) · 피드백 필요 판단 · 근거
+function scoreBox(fb, t) {
+  const sc = fb.scores || {};
+  return h('div', { class: 'score-box' },
+    h('div', { class: 'score-row' },
+      h('span', {}, `L1 의미 ${sc.l1 ?? '—'}`), h('span', {}, `L2 자연스러움 ${sc.l2 ?? '—'}`), h('span', {}, `시급성 ${sc.urgency ?? '—'}`),
+      h('span', { class: fb.needs_feedback ? 'need' : '' }, fb.needs_feedback ? '피드백 필요' : '피드백 불필요'),
+      t.feedback_purpose ? h('span', { class: 'muted' }, PURPOSE_LABEL[t.feedback_purpose] || t.feedback_purpose) : null,
+      t.feedback_latency_ms ? h('span', { class: 'muted' }, `${(t.feedback_latency_ms / 1000).toFixed(1)}초`) : null),
+    fb.rationale ? h('p', {}, h('b', {}, '판단 근거 '), fb.rationale) : null,
+    fb.likely_concern ? h('p', {}, h('b', {}, '추정한 궁금증 '), fb.likely_concern) : null);
 }
 
 function dlLink(href, label, { primary = false, small = false } = {}) {
@@ -318,8 +313,8 @@ export function render(root, ctx) {
       const fb = t.feedback;
       const tags = [];
       const st = feedbackState(task, t);
-      if (!fb) tags.push(h('span', {}, t.feedback_status === 'error' ? '피드백 오류' : '피드백 대기'));
-      else if (!fb.has_issue) tags.push(h('span', {}, '기준 미만 · 피드백 없음'));
+      if (!fb) tags.push(h('span', {}, t.feedback_status === 'error' ? '피드백 오류' : t.feedback_status === 'not_requested' ? '요청 안 함 · 피드백 없음' : '피드백 대기'));
+      else if (!fb.has_issue) tags.push(h('span', {}, '고칠 부분 없음 · 피드백 없음'));
       else if (t.shown) tags.push(h('span', { class: 'seen' }, VIA_LABEL[t.shown_via] || '확인함'));
       else tags.push(h('span', {}, '생성됨 · 확인 안 함'));
       if (task === 'user' && (t.requested || t.shown_via === 'request')) {
@@ -346,7 +341,7 @@ export function render(root, ctx) {
           h('audio', { controls: true, preload: 'none', src: t.recording_url }),
           h('span', {}, t.recording?.name || '')) : null,
         fb?.has_issue ? h('p', { class: 'revised', lang: 'en' }, highlighted(t.text, fb.revised)) : null,
-        fb?.sentences?.length ? sentenceTable(fb) : null,
+        fb ? scoreBox(fb, t) : null,
         h('div', { class: 'tags' }, tags));
     });
 

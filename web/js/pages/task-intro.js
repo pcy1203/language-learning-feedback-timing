@@ -2,6 +2,7 @@
 import { state, currentTask } from '../state.js';
 import { h, icon, fill } from '../lib/dom.js';
 import { sttSupported } from '../lib/stt.js';
+import { recorderSupported } from '../lib/recorder.js';
 import { pageFooter } from '../components/page-footer.js';
 
 export function render(main, ctx) {
@@ -11,9 +12,12 @@ export function render(main, ctx) {
   const topic = state.participant.topic_labels[task];
   const minutes = Math.round(settings.session_seconds / 60);
   const [rMin, rMax] = settings.recommended_speech_seconds;
+  // whisper 전사는 녹음만 되면 되고, 브라우저 전사는 음성 인식이 있어야 한다
+  const canSpeak = state.config.stt?.engine === 'whisper' ? recorderSupported() : sttSupported();
 
-  // 세 방식은 참가자 순서와 상관없이 같은 순서(User, AI, Delayed)로 보여준다
-  const fixed = ['user', 'ai', 'delayed'].map((k) =>
+  // 세 방식은 이 참가자에게 배정된 진행 순서대로 보여준다
+  const order = state.participant.order?.length === 3 ? state.participant.order : ['user', 'ai', 'delayed'];
+  const fixed = order.map((k) =>
     h('div', { class: `mode-card${k === task ? ' is-current' : ''}` },
       h('strong', {}, tasks[k].name), h('span', {}, tasks[k].summary)));
 
@@ -67,7 +71,7 @@ export function render(main, ctx) {
           h('h1', { class: 'page-title', style: { fontSize: '36px' } }, conf.name),
           h('p', { class: 'lead', style: { fontSize: '17px' } }, conf.intro)),
         h('section', { class: 'field', 'aria-labelledby': 'modes-h' },
-          h('h2', { id: 'modes-h', class: 'field-label', style: { color: 'var(--muted)' } }, '이번 Task는 세 가지 피드백 방식 중 하나예요'),
+          h('h2', { id: 'modes-h', class: 'field-label', style: { color: 'var(--muted)' } }, `이번 Task는 ${conf.name} 방식으로 진행해요`),
           h('div', { class: 'mode-grid' }, fixed)),
         h('section', { class: 'card', 'aria-labelledby': 'task-h' },
           h('div', { class: 'card-head' },
@@ -76,7 +80,7 @@ export function render(main, ctx) {
               h('span', { class: 'pill' }, h('span', {}, '주제'), h('strong', {}, topic)),
               h('span', { class: 'pill' }, h('span', {}, '시간'), h('strong', {}, `${minutes}분`)))),
           h('div', { class: 'card-body' }, h('ol', { class: 'rules' }, rules))),
-        !sttSupported() ? h('p', { class: 'notice' }, '이 브라우저는 음성 인식을 지원하지 않아요. Chrome으로 접속해 주세요.') : null,
+        !canSpeak ? h('p', { class: 'notice' }, '이 브라우저는 음성 입력을 지원하지 않아요. Chrome으로 접속해 주세요.') : null,
         h('div', { class: 'soft-box mic-check' },
           h('div', { class: 'mic-check-left' }, icon('mic', 20), '마이크 확인', h('span', { class: 'level', 'aria-hidden': 'true' }, bars)),
           status))),

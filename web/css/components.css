@@ -446,13 +446,9 @@ mark.hl.muted { background: var(--hl-muted); }
 .api-check-result.bad { color: var(--red); }
 
 /* ───────── 테스트 모드 점수 (?test=true) ───────── */
-.test-scores { align-self: stretch; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: #F3F5F8; border: 1px dashed var(--accent-line); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: left; }
+.test-scores { align-self: flex-end; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: #F3F5F8; border: 1px dashed var(--accent-line); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: left; }
 .test-scores .th { font-weight: 600; color: var(--accent); }
-.test-scores .row { display: grid; grid-template-columns: 26px 44px 44px minmax(0, 1fr); gap: 6px; align-items: baseline; }
-.test-scores .row b { color: var(--muted); }
-.test-scores .row .hit { color: var(--red); font-weight: 700; }
-.test-scores .row .txt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.test-scores .row.flagged .txt { color: var(--ink); }
+.test-scores .row { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 
 /* ───────── Admin 문장별 점수 ───────── */
 .sent-scores { font-size: 12px; }
@@ -510,3 +506,19 @@ mark.hl.muted { background: var(--hl-muted); }
 .stt-raw b { font-weight: 600; color: var(--muted-2); }
 .rec-row { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--muted-2); }
 .rec-row audio { height: 30px; max-width: 280px; }
+
+/* Delayed 종합 피드백: 패턴 + 규칙 단서 */
+.pattern-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pattern-list li { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pattern-list .cue { font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+
+/* Annotation: AI Decision 판단 근거 */
+.ann-rationale b { color: var(--accent); }
+
+/* 관리자: 점수 · 판단 근거 */
+.score-box { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: var(--bg-soft, #f6f7f9); font-size: 12.5px; color: var(--ink-2); }
+.score-box .score-row { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.score-box .need { color: var(--accent); font-weight: 600; }
+.score-box .muted { color: var(--muted); }
+.score-box p { margin: 0; line-height: 1.5; }
+.score-box b { font-weight: 600; color: var(--muted-2); }

@@ -22,7 +22,7 @@ export function render(main, ctx) {
       h('div', { class: 'page-inner' },
         h('header', { class: 'page-head' },
           h('h1', { class: 'page-title' }, '대화 피드백 모아보기'),
-          h('p', { class: 'lead' }, '피드백을 모두 모아서 보여드려요. 천천히 읽어본 뒤 다음으로 넘어가 주세요.')),
+          h('p', { class: 'lead' }, '종합 피드백과 피드백이 있었던 발화를 모아서 보여드려요. 천천히 읽어본 뒤 다음으로 넘어가 주세요.')),
         tabs, content)),
     footer.el,
   );
@@ -38,22 +38,24 @@ export function render(main, ctx) {
   function drawContent() {
     const summary = session.summary || { patterns: [], overview: '' };
     const turns = session.turns.filter((t) => t.role === 'user' && t.feedback?.has_issue);
-    const patternBox = h('section', { class: 'soft-box field', 'aria-label': '자주 나온 부분', style: { gap: '14px' } },
-      h('h2', { style: { fontSize: '14px', fontWeight: 700 } }, '자주 나온 부분'),
+    // 종합 피드백 (자주 나온 부분 + 규칙 단서 + 총평) — 두 탭 모두 맨 위에
+    const patternBox = h('section', { class: 'soft-box field', 'aria-label': '종합 피드백', style: { gap: '14px' } },
+      h('h2', { style: { fontSize: '14px', fontWeight: 700 } }, '종합 피드백'),
+      summary.overview ? h('p', { style: { fontSize: '14px', lineHeight: 1.7, color: 'var(--ink-2)' } }, summary.overview) : null,
       summary.patterns.length
-        ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
-          summary.patterns.map((p) => h('span', { class: 'chip' }, p.label, h('strong', {}, String(p.count)))))
-        : h('p', { style: { fontSize: '14px', color: 'var(--muted)' } }, '크게 반복된 실수는 없었어요.'),
-      tab === 'detailed' && summary.overview ? h('p', { style: { fontSize: '14px', lineHeight: 1.7, color: 'var(--ink-2)' } }, summary.overview) : null);
+        ? h('ul', { class: 'pattern-list' }, summary.patterns.map((p) => h('li', {},
+          h('span', { class: 'chip' }, p.label, h('strong', {}, String(p.count))),
+          p.cue ? h('span', { class: 'cue' }, p.cue) : null)))
+        : h('p', { style: { fontSize: '14px', color: 'var(--muted)' } }, '크게 반복된 실수는 없었어요.'));
 
     const items = turns.length
       ? h('ol', { class: 'list' }, turns.map((t) =>
         h('li', { class: 'summary-item' },
-          h('span', { class: 'when' }, `${fmtClock(t.ts)}에 한 말`),
+          h('span', { class: 'when' }, `${fmtClock(t.ts)} 발화`),
           h('p', { class: 'strike', lang: 'en', style: { fontSize: '14px' } }, t.text),
           h('p', { class: 'fb-text', lang: 'en' }, highlighted(t.text, t.feedback.revised)),
           tab === 'detailed' ? feedbackItems(t.feedback.items) : null)))
-      : h('p', { class: 'lead' }, '이번 대화에서는 고칠 부분이 거의 없었어요. 잘하셨어요!');
+      : h('p', { class: 'lead' }, '피드백이 있었던 발화가 없어요.');
 
     content.replaceChildren(patternBox, items);
   }

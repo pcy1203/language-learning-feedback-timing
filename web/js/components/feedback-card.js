@@ -25,8 +25,8 @@ export function feedbackCard(fb, original, mode, { title = '피드백', meta = '
   const card = h('section', { class: 'fb-card', 'aria-label': title },
     h('div', { class: 'fb-head' }, h('b', {}, title), meta ? h('span', { class: 'tabular' }, meta) : null));
   if (!fb || !fb.has_issue) {
-    // 점수가 기준(N) 미만이라 피드백 대상이 아닌 발화
-    card.append(h('p', { class: 'fb-ok' }, '이 말에는 피드백이 없어요. 하고 싶은 말이 잘 전달됐어요!'));
+    // 피드백 AI가 고칠 부분이 없다고 판단한 발화 (User Trigger 에서 요청했을 때)
+    card.append(h('p', { class: 'fb-ok' }, '이 발화에는 고칠 부분이 없어요. 하고 싶은 말이 잘 전달됐어요!'));
     return card;
   }
   card.append(h('p', { class: 'fb-text', lang: 'en' }, highlighted(original, fb.revised)));

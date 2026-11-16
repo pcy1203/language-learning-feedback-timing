@@ -3,7 +3,7 @@ import copy
 
 from fastapi import HTTPException
 
-from ..config import TASK_KEYS, annotation_config, app_settings, settings, survey_config, tasks_config, thresholds, topic_info
+from ..config import TASK_KEYS, annotation_config, app_settings, settings, survey_config, tasks_config, topic_info
 from ..services.gemini_live import SAMPLE_RATE
 from ..storage import audio_store, codes_store, session_store
 from ..storage.event_logger import now_iso
@@ -46,7 +46,6 @@ def participant_config() -> dict:
         "test_mode_enabled": bool(s.get("test_mode", {}).get("enabled", True)),
         "stt": {"engine": settings.stt_engine, "cleanup": settings.stt_engine == "browser" and settings.stt_cleanup},
         "reply_delay_seconds": {k: v for k, v in (s.get("reply_delay_seconds") or {}).items() if not k.startswith("_")},
-        "thresholds": thresholds(),
         "tasks": tasks_config(),
         "survey": survey_config(),
         "annotation": annotation_config(),

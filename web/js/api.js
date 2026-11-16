@@ -53,6 +53,7 @@ export const api = {
     if (audio) f.append('audio', audio, `utterance.${/mp4/.test(audio.type) ? 'm4a' : /ogg/.test(audio.type) ? 'ogg' : 'webm'}`);
     return request('POST', '/api/turn', f);
   },
+  getReply: (task, turn_id) => request('POST', '/api/turn/reply', { code: code(), task, turn_id }),
   feedbackScores: (task, turn_id) => request('POST', '/api/feedback/scores', { code: code(), task, turn_id }),
   awaitFeedback: (task, turn_id) => request('POST', '/api/feedback/await', { code: code(), task, turn_id }),
   requestFeedback: (task, turn_id) => request('POST', '/api/feedback/request', { code: code(), task, turn_id }),

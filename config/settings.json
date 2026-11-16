@@ -1,28 +1,23 @@
 {
-  "study_title": "AI 활용 외국어 말하기 학습에서 교정적 피드백의 시점 연구",
+  "study_title": "AI 활용 외국어 말하기 학습에서 교정적 피드백의 제시 방식 연구",
   "admin_code": "admin",
-  "session_seconds": 600,
+  "session_seconds": 540,
   "recommended_speech_seconds": [
     20,
-    50
+    40
   ],
   "speech_bar_max_seconds": 60,
   "stt_lang": "en-US",
-  "context_turns": 6,
-  "feedback_explanation_language": "Korean",
-  "feedback_threshold": {
-    "_comment": "문장마다 L1(의미 전달 영향)·L2(표현의 자연스러움)를 1~10점으로 채점하고, 둘 중 하나라도 이 값 이상이면 그 문장을 피드백 대상으로 본다. 세 조건(User Trigger · AI Decision · Delayed)에 똑같이 적용된다. 바꾼 값은 서버 재시작 없이 다음 발화부터 적용된다.",
-    "L1": 5,
-    "L2": 5
-  },
+  "_context_turns": "피드백 AI에게 함께 주는 최근 대화 턴 수 (AI·학습자 말 합산)",
+  "context_turns": 8,
   "reply_delay_seconds": {
-    "_comment": "대화 상대가 말을 시작하기 전 기다리는 시간(초). user: User Trigger 에서 응답이 준비된 뒤 이만큼 더 기다렸다가 말한다(피드백 보기를 누를 여유). ai_after_feedback: AI Decision 에서 피드백이 나온 뒤 대화 상대가 말하기까지의 간격.",
-    "user": 2.5,
+    "_comment": "대화 상대가 말을 시작하기 전 기다리는 시간(초). user: User Trigger 에서 내 말이 화면에 나온 뒤 최소 이만큼 지나야 대화 상대가 말한다 (피드백 보기를 누를 여유). ai_after_feedback: AI Decision 에서 피드백이 나온 뒤 대화 상대가 말하기까지의 간격.",
+    "user": 2.0,
     "ai_after_feedback": 1.0
   },
   "ai_decision_feedback_wait_seconds": 60,
   "test_mode": {
-    "_comment": "주소에 ?test=true 를 붙이면 대화 화면에서 발화 아래에 문장별 L1·L2 점수가 보인다. 본 실험에서 막으려면 enabled 를 false 로.",
+    "_comment": "주소에 ?test=true 를 붙이면 대화 화면에서 발화 아래에 L1(의미)·L2(자연스러움)·시급성 점수와 피드백 필요 여부가 보인다 (User Trigger 는 요청한 뒤). 본 실험에서 막으려면 enabled 를 false 로.",
     "enabled": true
   }
 }

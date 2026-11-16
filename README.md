@@ -1,10 +1,10 @@
-# AI 활용 외국어 말하기 학습에서 교정적 피드백의 시점 연구 — 실험 시스템
+# AI 활용 외국어 말하기 학습에서 교정적 피드백의 제시 방식 연구 — 실험 시스템
 
-교정적 피드백 **제시 시점**(User Trigger / AI Decision / Delayed)을 비교하는 Formative Study용 웹 시스템.
+교정적 피드백 **제시 방식**(User Trigger / AI Decision / Delayed)을 비교하는 Formative Study용 웹 시스템.
 
 - 서버: FastAPI (Python 3.11+) · 화면: Vanilla JS (ES modules) · 글꼴: Pretendard
 - **대화 상대 AI: Gemini 3.8 Live** (`gemini-3.8-live`, Live API) — 음성으로 답하고, 글자는 받아쓰기로 받음
-- **피드백 · 점수 · Delayed 요약: GPT-5.5** (`gpt-5.5`, OpenAI Responses API)
+- **피드백 · 점수 · Delayed 종합: GPT-5.5** (`gpt-5.5`, OpenAI Responses API) — 조건마다 프롬프트가 따로 있음
 - AI 음성: Gemini Live가 만든 음성을 그대로 재생 (실패하면 브라우저 내장 음성)
 - 참가자 발화: **녹음 파일로 저장** + 전사는 `.env`에서 선택 — 브라우저 내장 음성 인식(기본, **Chrome 필수**, 선택적으로 gpt-4o-mini로 오인식 다듬기) 또는 **Whisper**
 - 로그: 로컬 `data/` 폴더 (JSONL + JSON + AI 음성 wav + 참가자 녹음), Admin 화면에서 CSV/ZIP 내려받기
@@ -51,7 +51,7 @@ python run.py                                          # → http://127.0.0.1:80
 feedback-timing-study/
 ├── run.py · requirements.txt · .env.example
 ├── config/                        # 코드 수정 없이 바꾸는 값 (매 요청마다 다시 읽음)
-│   ├── settings.json              # 연구명, admin 코드, 세션 시간, 권장 발화 길이, ★ 피드백 기준값 N, 응답 지연, 테스트 모드 허용
+│   ├── settings.json              # 연구명, admin 코드, 세션 시간, 권장 발화 길이(20–40초), 피드백 맥락 턴 수(8), 응답 지연, 테스트 모드 허용
 │   ├── topics.json                # 대화 주제 8개 (Admin 드롭다운) — label: 화면 표시, hint: AI용 설명, legacy_topics: 예전 주제 이름
 │   ├── tasks.json                 # 세 조건 이름·설명 문구, Task 안내 규칙
 │   ├── annotation.json            # Annotation 질문과 조건별 적용 규칙
@@ -59,8 +59,11 @@ feedback-timing-study/
 ├── prompts/                       # 모든 프롬프트 ({{변수}} 치환, 수정 즉시 반영)
 │   ├── conversation_system.txt    # 대화 상대 AI의 응답 구성 (Gemini Live 시스템 지시)
 │   ├── conversation_opening.txt   # 첫 인사·첫 질문
-│   ├── feedback_turn.txt          # ★ 문장 분리 + L1·L2 채점 + 고친 문장/이유 (GPT-5.5, JSON)
-│   ├── delayed_summary.txt        # Delayed 종합 피드백 (패턴 + 총평)
+│   ├── feedback_user_trigger.txt  # ★ User Trigger: 요청 시 생성 (학습자가 궁금했을 점 추론)
+│   ├── feedback_ai_decision.txt   # ★ AI Decision: 지금 꼭 필요한지 판단 + 근거(rationale)
+│   ├── feedback_delayed_turn.txt  # ★ Delayed: 발화별 피드백 필요 여부 판단
+│   ├── feedback_delayed_summary.txt # ★ Delayed: 종료 후 종합 피드백 (패턴 + 규칙 단서 + 총평)
+│   ├── PROMPT_DESIGN.md           # 프롬프트 구성 논리와 참고 문헌 (조건별)
 │   ├── stt_cleanup.txt            # 브라우저 전사의 오인식 다듬기 (STT_CLEANUP=1)
 │   └── stt_whisper_prompt.txt     # Whisper에 주는 말투 예시 (오류·필러를 고치지 않고 받아 적도록)
 ├── tools/
@@ -70,7 +73,7 @@ feedback-timing-study/
 │   ├── main.py · config.py · auth.py
 │   ├── routes/      session.py (로그인·진행·세션·AI 음성) · turn.py (발화·녹음·전사·피드백·테스트 점수) · annotation.py
 │   │                survey.py · log.py (브라우저 이벤트) · admin.py (코드·대시보드·로그·CSV·연결 확인) · common.py
-│   ├── services/    gemini_live.py (Live API) · conversation_agent.py · llm.py (OpenAI) · feedback_agent.py (채점·기준값)
+│   ├── services/    gemini_live.py (Live API) · conversation_agent.py · llm.py (OpenAI) · feedback_agent.py (조건별 프롬프트·정리)
 │   │                feedback_jobs.py (백그라운드 피드백) · intervention_policy.py · delayed_summary.py · transcription.py (Whisper·다듬기)
 │   │                dashboard.py · prompt_loader.py · mock.py
 │   └── storage/     codes_store.py · session_store.py · event_logger.py · csv_export.py · audio_store.py · recording_store.py
@@ -103,41 +106,30 @@ feedback-timing-study/
 
 ---
 
-## 4. 피드백 로직 (GPT-5.5, `feedback_turn.txt` + `feedback_agent.py`)
+## 4. 피드백 로직 (GPT-5.5, `prompts/feedback_*.txt` + `feedback_agent.py`)
 
-**대상**: 어휘(표현)·문법·화용만. 발음·내용·유창성은 다루지 않아요. 음성 인식의 문장부호·대소문자·필러는 오류로 보지 않아요.
+구성 논리와 참고 문헌은 `prompts/PROMPT_DESIGN.md`에 정리돼 있어요.
 
-**채점** — 발화를 문장으로 나누고, 문장마다 두 기준을 1~10점으로:
+**피드백 대상 (세 조건 공통)** — ① 의미 전달을 막거나 왜곡하는 오류 ② 이해는 되지만 원어민이라면 더 자연스럽게 말할 표현. 어휘·문법·화용만 다루고 발음·유창성·내용, 음성 인식의 문장부호·필러·오인식은 제외해요.
 
-| 기준 | 판단 방법 | 점수 기준 (요약) |
-|---|---|---|
-| **L1 의미 전달 영향** | ① 청자 직역(오류를 고치지 않고, 이해 불가면 "이해 불가") + 확인 질문 2개(다른 해석이 정말 가능? 멈추고 다시 생각해야 이해?) ② 화자 의도 번역(맥락 반영) ③ 비교 → 점수 (가장 심각한 문제 하나 기준, 작은 문제를 합쳐 올리지 않음) | 1–2 뜻이 온전히 전달(작은 실수 포함) · 3–4 오류가 보이지만 바로 이해 · 5–6 멈추거나 추측해야 이해 · 7–8 해석이 실제로 둘 이상 · 9–10 다른 의미/복원 불가 |
-| **L2 표현의 자연스러움** | ① 최소 수정본(구어 기준 문법적) ② 자연스러움 수정본(원어민처럼, 의미 보존) ③ 비교 → 점수 (쉬운·평이한 표현은 감점 안 함) | 1–2 그대로 괜찮음 · 3–4 대화에서 무난(더 자연스러운 대안·작은 실수) · 5–6 분명히 비원어민스러운 표현 · 7–8 확연히 어색 · 9–10 화용적으로 부적절 |
+**피드백 형식** — 간단한 피드백 = 발화 전체를 최소한으로 고친 문장(재구성·명시적 교정, 바뀐 부분 노란색). 자세한 피드백 = 그 위에 바뀐 곳마다 규칙·이유를 한국어로 설명(메타언어적 단서). Delayed 종합 피드백도 메타언어적 단서(반복 패턴 + 규칙 한 문장 + 총평).
 
-점수는 엄격한 시험관이 아니라 대화 상대 입장에서 매기고, 중급 학습자의 문장은 대부분 1~4점에 오도록, 두 구간 사이에서 애매하면 **낮은 쪽**을 고르도록 안내해요.
+**피드백을 줄지**는 AI Decision·Delayed는 피드백 AI의 `needs_feedback` 판단으로, User Trigger는 (이미 요청했으므로) 고친 부분이 있는지로 정해요 (없으면 "고칠 부분이 없어요"). **점수**(L1 의미 전달 영향 · L2 자연스러움 · 시급성, 1–10)는 발화마다 기록만 하고 결정에는 쓰지 않아요. 피드백 AI에게는 그 발화 앞의 최근 8턴(`context_turns`)을 함께 줘요.
 
-**제시 기준 N** (`config/settings.json → feedback_threshold`, 기본 L1 5 · L2 5): 문장의 **L1 ≥ N 또는 L2 ≥ N**이고 실제로 고친 부분이 있으면 그 문장은 피드백 대상이에요. 발화에 피드백 대상 문장이 하나라도 있으면 그 발화는 "피드백 있음"이에요. 기준값은 서버를 다시 켜지 않아도 다음 발화부터 적용되고, 발화마다 그때 쓴 기준값이 함께 저장돼요.
+| 조건 | 언제 만드나 | 프롬프트 | 대화 중 표시 |
+|---|---|---|---|
+| User Trigger (`user`) | **피드백 보기를 누른 순간** (대화는 그동안에도 이어짐). 요청하지 않은 발화는 세션 종료 때 같은 프롬프트로 만들어 Annotation에서만 회색으로 | `feedback_user_trigger.txt` — 학습자가 무엇이 궁금했을지 먼저 추론(`likely_concern`) | 누른 발화에만. 고칠 게 없으면 "이 말에는 고칠 부분이 없어요". 누른 사실은 `requested`, `requested_at`, `request_count`. 내 말이 화면에 나온 뒤 **최소 2초** 지나야 대화 상대가 말함 |
+| AI Decision (`ai`) | 매 발화 직후 | `feedback_ai_decision.txt` — 대화를 끊을 만큼 **지금 꼭 필요한지** 판단, 필요한 만큼만 교정, 판단 근거 `rationale` | 필요할 때만 자동 표시. **피드백이 먼저 나오고 1초 뒤 대화 상대가 말함** (기다리는 동안 하단에 작게 "피드백 생성 중…"). 근거는 Annotation에서 보여준/안 보여준 발화 모두에 표시 |
+| Delayed (`delayed`) | 매 발화 직후 (뒤에서) | `feedback_delayed_turn.txt` + 종료 후 `feedback_delayed_summary.txt` | 표시 안 함 → 종료 후 **종합 피드백을 맨 위에**, 피드백이 있었던 발화를 아래에 나열 (고칠 게 없던 발화는 제외) |
 
-**피드백 형태** (원문은 최소한으로 바꾸고 학습자의 의미·말투·수준 유지)
-- 간단한 피드백: 발화 전체에서 피드백 대상 문장만 고친 문장 (바뀐 부분은 노란색 강조)
-- 자세한 피드백: 간단한 피드백 + 바뀐 부분마다 유형(의미 전달/더 나은 표현 · 어휘/문법/화용)과 한국어 이유
+**대화 응답 분리** — `POST /api/turn`은 내 발화를 저장하고 바로 돌려주고, 대화 상대의 답은 그 순간부터 뒤에서 만들어 `POST /api/turn/reply`로 받아요. 그래서 User Trigger에서 답을 기다리는 동안에도 피드백을 요청할 수 있어요.
 
-점수와 상관없이 모든 문장을 고친 결과(`revised_all`, `items_all`)와 문장별 채점 근거(직역·의도·최소/자연 수정본)도 함께 저장돼요.
-
-**세 조건 모두 같은 로직으로 미리 만들어 두고, 보여주는 시점만 달라요**
-
-| 조건 (내부 키) | 대화 중 피드백 |
-|---|---|
-| User Trigger (`user`) | 내 발화 아래 **피드백 보기**를 누르면 표시. 기준 미만이면 "이 말에는 피드백이 없어요". 누른 사실은 `requested`, `requested_at`, `request_count`로 기록. 대화 상대는 응답이 준비된 뒤 **2.5초 더 기다렸다가** 말해요 (피드백 보기를 누를 여유) |
-| AI Decision (`ai`) | 기준 이상인 발화만 자동 표시 (노출 비율 보정 없음). **피드백이 먼저 나오고 1초 뒤 대화 상대가 말해요**. 기다리는 동안 대화 아래에 작게 "피드백 생성 중…". 60초 안에 피드백이 안 나오면 대화를 먼저 이어가고 피드백은 나오는 대로 표시 |
-| Delayed (`delayed`) | 표시 안 함 → 종료 후 기준 이상 발화만 **종합 피드백**(간단/자세한 탭)으로 한 번에 |
-
-**CSV 일괄 채점** (`tools/score_csv.py`) — 같은 프롬프트·기준으로 CSV의 발화를 채점해 오른쪽 열에 붙여요.
+**CSV 일괄 처리** (`tools/score_csv.py`) — 실험과 같은 프롬프트로 CSV의 발화를 처리해 오른쪽 열에 붙여요.
 ```bash
-python tools/score_csv.py learner_sentence.csv               # → learner_sentence_scored.csv
-python tools/score_csv.py learner_sentence.csv --column 발화 --topic 여행 --concurrency 4
+python tools/score_csv.py learner_sentence.csv                       # User Trigger 프롬프트 (기본)
+python tools/score_csv.py learner_sentence.csv --condition ai --column 발화 --topic 여행
 ```
-추가 열: `l1_score` `l2_score`(문장 중 최고점) · `feedback_shown`(기준 이상 Y/N) · `l1_scores` `l2_scores`(문장별) · `simple_feedback` `detailed_feedback`(점수와 상관없이) · `intended_ko` `literal_ko` · `sentences_json` · `error`. 발화 열은 `sentence/utterance/text/발화/문장` 중 있는 것, 없으면 첫 열을 써요.
+추가 열: `l1_meaning` `l2_naturalness` `urgency` · `needs_feedback`(Y/N) · `simple_feedback` `detailed_feedback`(필요할 때만) · `intended_ko` · `rationale`(ai) · `likely_concern`(user) · `error`. 결과 파일은 `입력파일명_scored_{condition}.csv`.
 
 ---
 
@@ -145,22 +137,23 @@ python tools/score_csv.py learner_sentence.csv --column 발화 --topic 여행 --
 
 ```
 코드 입력 → [Task 1 → Task 2 → Task 3] → 종료 화면(처음으로)
-각 Task: 설명 → 피드백 방식 선택 → 10분 대화 → (Delayed만: 종합 피드백) → 평가(Annotation) → 세션 설문
+각 Task: 설명 → 피드백 방식 선택 → 9분 대화 → (Delayed만: 종합 피드백) → 평가(Annotation) → 세션 설문
 ```
 
 - 좌측 사이드바에 Task 진행과 세부 단계, 아래쪽에 **나가기**(확인 후 코드 입력 화면으로). **다음** 버튼은 본문 우측 하단
 - **새로고침하면 코드 입력 화면**이 나오고 코드가 미리 채워져 있어요. **이어서 하기**를 누르면 서버에 저장된 마지막 단계부터 이어져요 (다른 PC에서 같은 코드로 들어와도 동일). 대화 중 나갔다 와도 타이머는 세션 시작 시각 기준으로 계속 흘러요
-- 대화: AI가 먼저 말함(음성 + 왼쪽 말풍선) → 마이크 버튼을 누른 순간부터 다시 누른 순간까지 **녹음**, 오른쪽에 실시간 전사 → 전사(옵션: 다듬기/Whisper) 뒤 대화 AI 응답과 피드백 생성
+- 대화: AI가 먼저 말함(음성 + 왼쪽 말풍선) → 마이크 버튼을 누른 순간부터 다시 누른 순간까지 **녹음**, 오른쪽에 실시간 전사 → 전사(옵션: 다듬기/Whisper) 뒤 내 말풍선이 먼저 나오고, 대화 상대의 답과 피드백은 조건별 순서로
+- 첫 Task 설명 화면의 세 방식 상자는 그 참가자에게 배정된 진행 순서대로 나와요. 권장 발화 길이는 한 번에 20–40초
 - 내 말풍선의 **듣기** 버튼으로 녹음을 다시 들을 수 있어요 (대화 화면 · Annotation · 관리자 화면)
-- 타이머는 경과 시간. 10:00이 넘으면 빨간색 + 안내. **세션 종료**는 항상 노출
+- 타이머는 경과 시간. 9:00이 넘으면 빨간색 + 안내. **세션 종료**는 항상 노출
 - 간단한/자세한 피드백은 대화 중 언제든 전환 (이미 나온 피드백도 바뀜)
 
 ### Annotation (`annotation.json`)
-모든 발화(녹음 **듣기** 버튼) + AI가 이해한 의도 + 피드백. **본 피드백은 컬러, 만들어졌지만 못 본 피드백은 회색·점선**. 상태에 맞는 질문만 물어요.
+모든 발화(녹음 **듣기** 버튼) + AI가 이해한 의도 + 피드백. **본 피드백은 컬러, 못 본 피드백은 회색·점선**. AI Decision은 **AI가 피드백을 보여준 / 보여주지 않은 이유**도 함께 보여줘요. 상태에 맞는 질문만 물어요.
 
 | 조건 | 봤음 | 못 봤음 | 요청했지만 피드백 없음 | 피드백 없음 |
 |---|---|---|---|---|
-| User Trigger | 내용 · 의도 · 본 것이 도움 됐나 | 내용 · 의도 · 봤다면 도움 됐을까 | 의도 · 피드백이 있어야 했나 | 의도 · 피드백이 있어야 했나 |
+| User Trigger | 내용 · 의도 · 본 것이 도움 됐나 | (요청하지 않은 발화, 세션 후 생성) 내용 · 의도 · 봤다면 도움 됐을까 | 의도 · 피드백이 있어야 했나 | 의도 · 피드백이 있어야 했나 |
 | AI Decision | 내용 · 의도 · 이 시점에 필요했나 | (세션 종료 뒤 늦게 생성된 경우만) | — | 의도 · 피드백이 있어야 했나 |
 | Delayed | 내용 · 의도 · 실시간이었다면 유용했을까 | — | — | 의도 · 피드백이 있어야 했나 |
 
@@ -172,9 +165,9 @@ python tools/score_csv.py learner_sentence.csv --column 발화 --topic 여행 --
 ## 6. Admin (`admin` 입력)
 - **API 상태 줄**: 대화 AI·피드백 모델과 키 연결 여부, AI 음성 방식, **연결 확인**(실제 호출 테스트)
 - **참가자 코드**: Task 순서(6가지) + Task별 주제 → 6자리 코드 생성, 메모, 삭제(로그 파일은 남음)
-- **대시보드**: 조건 비교 표(세션 시간, 발화 수·길이, 피드백 대상 비율, 평균 L1·L2, 노출·요청 비율), 세션 설문 평균, **문장별 L1·L2 점수 분포**(기준 N 표시), Annotation 선택 비율. '완료한 참가자만' 필터, 요약 CSV
-- **로그**: Task별 대화·**참가자 녹음 재생**·전사 원문(다듬기 전/Whisper 미리보기)·피드백·**문장별 점수와 채점 근거**·요청/노출 여부·Annotation 응답·설문, 이벤트 타임라인
-- **CSV**: 참가자별 `turns`(대화·피드백·전사 방식·녹음 파일 이름) / `sentences`(문장별 점수·근거 — 기준값 N 검토용) / `events` / `annotations` / `survey`, Task별, 참가자 ZIP(녹음 파일 포함), 전체 참가자 통합. 엑셀용 UTF-8 BOM
+- **대시보드**: 조건 비교 표(세션 시간, 발화 수·길이, 피드백을 만든 발화와 그중 필요 판단 비율, 평균 L1·L2·시급성, 생성 시간, 노출·요청 비율), 세션 설문 평균, **발화별 L1·L2·시급성 점수 분포**, Annotation 선택 비율. '완료한 참가자만' 필터, 요약 CSV
+- **로그**: Task별 대화·**참가자 녹음 재생**·전사 원문(다듬기 전/Whisper 미리보기)·피드백·**점수·필요 판단·근거(AI Decision)·추정한 궁금증(User Trigger)·생성 시점**·요청/노출 여부·Annotation 응답·설문, 이벤트 타임라인
+- **CSV**: 참가자별 `turns`(대화·피드백·점수·판단 근거·전사 방식·녹음 파일 이름) / `events` / `annotations` / `survey`, Task별, 참가자 ZIP(녹음 파일 포함), 전체 참가자 통합. 엑셀용 UTF-8 BOM
 
 **기록 보존**: 모든 기록은 `data/` 파일에 바로 저장되고, 화면은 요청마다 파일을 다시 읽어요. 서버를 껐다 켜도 그대로 보이고, 만들지 못한 피드백은 요청하거나 세션을 종료할 때 다시 만들어요. 관리자 로그인도 `data/admin_tokens.json`에 저장돼 유지돼요(14일). 백업은 `data/` 폴더 통째로.
 
@@ -187,14 +180,14 @@ python tools/score_csv.py learner_sentence.csv --column 발화 --topic 여행 --
 |---|---|
 | 진행 | `login` `step_enter` `session_start`(사용 모델 기록) `session_resume` `session_end` `page_visibility` `restart_click` `exit_click` |
 | 대화 | `ai_utterance`(음성 파일·길이) `user_utterance`(전사 방식·원문·다듬은 단어·녹음 파일) `utterance_empty` `tts_start` `tts_end`(live/browser) `tts_replay` `mic_start` `mic_stop` `recording_play` `recording_error` `stt_error` `ai_error` |
-| 피드백 | `mode_select` `mode_toggle` `feedback_generated`(문장별 L1·L2 점수, 기준값, 전체 JSON, 지연 ms) `feedback_error` `feedback_regenerate` `feedback_request_click` `feedback_requested` `intervention_decision` `feedback_shown` `feedback_displayed` |
+| 피드백 | `mode_select` `mode_toggle` `feedback_generated`(생성 시점 purpose, 필요 판단, L1·L2·시급성, 전체 JSON, 지연 ms) `feedback_error` `feedback_regenerate` `feedback_request_click` `feedback_requested` `intervention_decision` `feedback_shown` `feedback_displayed` |
 | 종료 후 | `timer_expired` `session_end_click` `delayed_summary_generated` `delayed_summary_view` `delayed_tab_switch` `annotation_view` `annotation_click` `annotation_saved` `survey_view` `survey_submit` |
 
 ---
 
 ## 8. 남은 일 · 참고
 - 실제 키로 파일럿: Gemini Live 응답 속도·음성, GPT-5.5 채점 품질과 지연(`FEEDBACK_REASONING_EFFORT`) 확인
-- 발화–점수 쌍을 검토해 기준값 N 합의 (`sentences` CSV, 대시보드 점수 분포, `tools/score_csv.py`)
+- 실제 키로 조건별 프롬프트 출력 검토 (`tools/score_csv.py --condition user|ai|delayed`로 같은 발화를 비교)
 - 설문 문항(`survey.json`) 확정
 - 녹음은 브라우저 기본 형식(Chrome: webm/Opus)으로 저장돼요. wav가 필요하면 `ffmpeg -i in.webm out.wav`로 변환
 - Pretendard 글꼴: SIL Open Font License (`web/fonts/Pretendard-LICENSE.txt`)

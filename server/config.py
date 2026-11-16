@@ -84,12 +84,6 @@ def app_settings() -> dict:
     return load_config("settings.json")
 
 
-def thresholds() -> dict:
-    """피드백 제시 기준 N (config/settings.json → feedback_threshold). 점수가 이 값 이상이면 피드백 대상."""
-    t = app_settings().get("feedback_threshold", {})
-    return {"l1": int(t.get("L1", 5)), "l2": int(t.get("L2", 5))}
-
-
 def topics() -> list[dict]:
     return load_config("topics.json")["topics"]
 

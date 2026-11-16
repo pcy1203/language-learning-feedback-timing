@@ -100,9 +100,10 @@ export function renderDashboard(container, { onError }) {
           row('세션당 발화 수', (c) => num(c.avg_user_turns)),
           row('평균 발화 길이', (c) => (c.avg_duration_s == null ? '—' : `${num(c.avg_duration_s)}초`)),
           group('피드백'),
-          row('피드백 대상 발화 (기준 이상)', (c) => withN(pct(c.issue_rate), `(${c.user_turns})`)),
-          row('평균 최고 점수 L1 · L2 (1–10)', (c) => `${num(c.avg_max_l1, 1)} · ${num(c.avg_max_l2, 1)}`),
-          row('피드백 대상 문장 (기준 이상)', (c) => withN(c.sentences ? pct(c.flagged_sentences / c.sentences) : '—', `(${c.sentences})`)),
+          row('피드백을 만든 발화', (c) => withN(c.feedback_generated ?? '—', `/ ${c.user_turns}`)),
+          row('그중 피드백이 필요하다고 판단', (c) => withN(pct(c.issue_rate), `(${c.feedback_generated ?? 0})`)),
+          row('평균 점수 L1 · L2 · 시급성 (기록용)', (c) => `${num(c.avg_l1, 1)} · ${num(c.avg_l2, 1)} · ${num(c.avg_urgency, 1)}`),
+          row('평균 피드백 생성 시간', (c) => (c.avg_latency_ms == null ? '—' : `${num(c.avg_latency_ms / 1000, 1)}초`)),
           row('대화 중 피드백을 본 비율', (c) => (c.key === 'delayed' ? '종료 후 일괄' : withN(pct(c.shown_live_rate), `(${c.issue_turns})`))),
           row('자세한 피드백으로 시작', (c) => pct(c.detailed_start_rate)),
           row('세션당 방식 전환 횟수', (c) => (c.key === 'delayed' ? '—' : num(c.avg_mode_toggles))),
@@ -169,36 +170,31 @@ export function renderDashboard(container, { onError }) {
       h('div', { class: 'ann-cols' }, cards));
   }
 
-  // ── 문장별 L1·L2 점수 분포 (기준값 N을 정할 때 참고) ──
-  function histogram(label, counts, n, perCond, conds) {
+  // ── 발화별 점수 분포 (기록용 · 피드백 결정에는 쓰지 않음) ──
+  const SCORE_LABEL = { l1: 'L1 의미 전달 영향', l2: 'L2 표현의 자연스러움', urgency: '피드백 시급성' };
+  function histogram(key, counts, perCond, conds) {
     const max = Math.max(1, ...counts);
     const total = counts.reduce((a, b) => a + b, 0);
-    const over = counts.slice(n - 1).reduce((a, b) => a + b, 0);
     const bars = counts.map((v, i) => {
-      const score = i + 1;
       const col = h('div', { class: 'hist-col' },
         h('span', { class: 'hist-n' }, v ? String(v) : ''),
-        h('span', { class: `hist-bar${score >= n ? ' over' : ''}`, style: { height: `${(v / max) * 100}%` } }),
-        h('span', { class: 'hist-x' }, String(score)));
-      attachTip(col, `${label} ${score}점: ${v}문장\n` + conds.map((c) => `${c.name} ${perCond[c.key]?.[label]?.[i] ?? 0}`).join(' · '));
+        h('span', { class: 'hist-bar', style: { height: `${(v / max) * 100}%` } }),
+        h('span', { class: 'hist-x' }, String(i + 1)));
+      attachTip(col, `${SCORE_LABEL[key]} ${i + 1}점: ${v}발화\n` + conds.map((c) => `${c.name} ${perCond[c.key]?.[key]?.[i] ?? 0}`).join(' · '));
       return col;
     });
     return h('div', { class: 'chart-card' },
       h('div', { class: 'section-head' },
-        h('h3', {}, label === 'L1' ? 'L1 의미 전달 영향' : 'L2 표현의 자연스러움'),
-        h('span', { style: { fontSize: '12px', color: 'var(--muted)' } }, `기준 ${n}점 이상 ${total ? Math.round((over / total) * 100) : 0}% (${over}/${total})`)),
-      h('div', { class: 'hist', style: { '--n': String(n) } }, bars,
-        h('span', { class: 'hist-line', style: { left: `${((n - 1) / 10) * 100}%` }, 'aria-hidden': 'true' }, `기준 ${n}`)));
+        h('h3', {}, SCORE_LABEL[key]),
+        h('span', { style: { fontSize: '12px', color: 'var(--muted)' } }, `${total}발화`)),
+      h('div', { class: 'hist' }, bars));
   }
 
   function scoreSection(scores, conds) {
     if (!scores) return null;
-    const th = scores.thresholds;
     return h('section', { class: 'dash-section', 'aria-labelledby': 'sc-h' },
-      h('h2', { id: 'sc-h' }, '문장별 점수 분포'),
-      h('p', { class: 'note' }, `세 조건의 모든 문장을 합친 분포예요. 진한 막대가 현재 기준(L1 ≥ ${th.l1} 또는 L2 ≥ ${th.l2}) 이상이에요. 기준값은 config/settings.json에서 바꿀 수 있고, 문장별 근거는 '문장별 점수' CSV로 내려받을 수 있어요.`),
-      h('div', { class: 'likert-grid' },
-        histogram('L1', scores.all.L1, th.l1, scores.by_condition, conds),
-        histogram('L2', scores.all.L2, th.l2, scores.by_condition, conds)));
+      h('h2', { id: 'sc-h' }, '발화별 점수 분포'),
+      h('p', { class: 'note' }, '세 조건에서 피드백을 만든 모든 발화를 합친 분포예요. 점수는 기록용이고, 피드백을 줄지는 피드백 AI가 따로 판단해요. 막대에 마우스를 올리면 조건별 개수가 보여요.'),
+      h('div', { class: 'likert-grid' }, ['l1', 'l2', 'urgency'].map((k) => histogram(k, scores.all[k], scores.by_condition, conds))));
   }
 }

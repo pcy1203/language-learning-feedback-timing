@@ -71,8 +71,8 @@ function logout() {
 // 참가자 '나가기': 진행 상황은 서버에 저장돼 있으므로, 같은 코드를 다시 입력하면 이어서 진행된다
 function exit() {
   const msg = state.step === 'chat'
-    ? '대화 중에 나가면 지금 녹음 중인 말은 저장되지 않아요. 대화 시간은 계속 흘러가요.\n같은 코드를 다시 입력하면 이어서 할 수 있어요. 나갈까요?'
-    : '지금까지 진행한 내용은 저장돼 있어요.\n같은 코드를 다시 입력하면 이어서 할 수 있어요. 나갈까요?';
+    ? '대화 중에 나가면 지금 녹음 중인 발화는 저장되지 않아요. 정말로 나갈까요?'
+    : '지금까지 진행한 내용은 저장되었으며, 같은 코드를 다시 입력하면 이어서 할 수 있어요. 나갈까요?';
   if (!window.confirm(msg)) return;
   logEvent('exit_click', { task_index: state.taskIndex, step: state.step });
   api.progress().catch(() => {});

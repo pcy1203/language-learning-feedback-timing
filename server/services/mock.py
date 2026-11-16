@@ -34,49 +34,30 @@ def reply(turns: list[dict]) -> str:
     return _QUESTIONS[(n - 1) % len(_QUESTIONS)]
 
 
-def _split(utterance: str) -> list[str]:
-    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+|\s+(?:and then|but)\s+", utterance) if p.strip()]
-    return parts or [utterance.strip()]
-
-
-def _sentence(original: str) -> dict:
-    revised = original
-    items = []
+def feedback_raw(utterance: str, task: str) -> dict:
+    """feedback_*.txt 의 출력 형식과 같은 모양의 가짜 결과 (규칙에 걸리면 피드백 필요)."""
+    revised, items = utterance, []
     for pattern, repl, kind, cat, why in _RULES:
         m = re.search(pattern, revised, re.I)
         if m and len(items) < 3:
             items.append({"type": kind, "category": cat, "original": m.group(0), "revised": repl, "explanation": why})
             revised = re.sub(pattern, repl, revised, count=1, flags=re.I)
     meaning = any(i["type"] == "meaning" for i in items)
-    expression = any(i["type"] == "expression" for i in items)
-    revised = revised[:1].upper() + revised[1:]
-    if revised and revised[-1] not in ".!?":
-        revised += "."
-    return {
-        "original": original,
-        "l1": {
-            "literal_ko": f"(MOCK 직역) {original[:40]}",
-            "other_interpretation": False,
-            "needs_effort": meaning,
-            "intended_ko": f"(MOCK 의도) {original[:40]}",
-            "same_meaning": True,
-            "score": 6 if meaning else 2,
-            "reason_ko": "(MOCK) 규칙 기반 점수",
-        },
-        "l2": {
-            "minimal_revision": revised,
-            "natural_revision": revised,
-            "score": 6 if expression else (3 if meaning else 2),
-            "reason_ko": "(MOCK) 규칙 기반 점수",
-        },
-        "revised": revised,
+    needs = bool(items)
+    out = {
+        "intended_ko": f"(MOCK 의도) {utterance[:40]}",
+        "scores": {"meaning": 6 if meaning else 2, "naturalness": 6 if needs else 2, "urgency": 7 if meaning else (4 if needs else 1)},
+        "needs_feedback": needs,
+        "revised": revised[:1].upper() + revised[1:] if needs else utterance,
         "items": items,
     }
-
-
-def feedback_raw(utterance: str) -> dict:
-    """feedback_turn.txt 의 출력 형식과 같은 모양의 가짜 채점 결과."""
-    return {"sentences": [_sentence(s) for s in _split(utterance)]}
+    if task == "ai":
+        out["rationale"] = ("(MOCK) 지난 일을 말하면서 시제가 맞지 않아 뜻이 헷갈릴 수 있어서 지금 짚어 드려요."
+                            if needs else "(MOCK) 하고 싶은 말이 잘 전달돼서 대화를 이어가도 괜찮아요.")
+    if task == "user":  # User Trigger 프롬프트에는 needs_feedback 이 없다
+        out.pop("needs_feedback")
+        out["likely_concern"] = "(MOCK) 동사 형태가 맞는지 확인하고 싶었을 거예요."
+    return out
 
 
 def summary(feedback_turns: list[dict]) -> dict:
@@ -84,4 +65,8 @@ def summary(feedback_turns: list[dict]) -> dict:
     expression = sum(1 for t in feedback_turns for i in t["feedback"]["items"] if i["type"] == "expression")
     patterns = [p for p in [{"label": "의미 전달", "count": meaning}, {"label": "더 자연스러운 표현", "count": expression}] if p["count"]]
     patterns.sort(key=lambda p: -p["count"])
+    cues = {"의미 전달": "지난 일을 말할 때는 동사를 과거형으로 바꿔야 시점이 분명해져요.",
+            "더 자연스러운 표현": "very 대신 상황에 맞는 형용사나 a lot of 같은 표현을 써 보세요."}
+    for p in patterns:
+        p["cue"] = cues[p["label"]]
     return {"patterns": patterns, "overview": "(MOCK) 전체적으로 하고 싶은 말을 잘 전달했어요. 지난 일을 말할 때 과거형을 쓰는 연습을 해 보세요."}

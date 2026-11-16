@@ -1,4 +1,10 @@
-"""발화 처리: 녹음 저장 · 전사 · 대화 AI 응답 + 피드백(백그라운드), 피드백 대기·요청, 녹음 재생."""
+"""발화 처리: 녹음 저장 · 전사 → 턴 저장 → 피드백(조건별) + 대화 AI 응답(백그라운드), 피드백 대기·요청, 녹음 재생.
+
+응답은 두 번에 나눠 받는다.
+  POST /api/turn        내 발화를 저장하고 바로 돌려준다 (AI Decision 은 피드백 결정까지 기다린 뒤)
+  POST /api/turn/reply  그 발화에 대한 대화 상대의 답 (발화를 저장하는 순간부터 뒤에서 만들고 있음)
+그래서 User Trigger 에서는 대화 상대가 답을 준비하는 동안에도 '피드백 보기'를 누를 수 있다.
+"""
 import asyncio
 import time
 from typing import Literal
@@ -20,9 +26,41 @@ Task = Literal["user", "ai", "delayed"]
 FALLBACK_REPLY = "Sorry, I didn't quite catch that. Could you tell me a little more?"
 
 
-def _turn_context(history: list[dict]) -> list[dict]:
-    n = int(app_settings().get("context_turns", 6))
-    return history[-(n + 1):-1]
+_replies: dict[tuple[str, str, int], asyncio.Task] = {}
+
+
+async def _make_reply(code: str, task: str, turn_id: int, topic: dict, history: list[dict]) -> dict:
+    """대화 상대의 답을 만들어 세션에 붙인다 (세션이 이미 끝났으면 붙이지 않음)."""
+    try:
+        result = await conversation_agent.reply(topic, history)
+        if not result["text"]:
+            raise ValueError("empty reply")
+    except Exception as e:
+        log_event(code, "ai_error", {"where": "reply", "turn_id": turn_id, "error": str(e)[:300]}, task=task)
+        result = {"text": FALLBACK_REPLY, "pcm": b"", "fallback": True}
+    out: dict = {}
+
+    def apply(sess):
+        if sess.get("ended_at"):
+            return
+        out.update(make_ai_turn(code, task, session_store.next_turn_id(sess), result))
+        out["reply_to"] = turn_id
+        if result.get("fallback"):
+            out["fallback"] = True
+        sess["turns"].append(dict(out))
+
+    await session_store.mutate(code, task, apply)
+    if out:
+        log_event(code, "ai_utterance", {"turn_id": out["id"], "reply_to": turn_id, "text": out["text"], "audio": out.get("audio"),
+                                         "fallback": bool(result.get("fallback"))}, task=task)
+    return out
+
+
+def _start_reply(code: str, task: str, turn_id: int, topic: dict, history: list[dict]) -> asyncio.Task:
+    key = (code, task, turn_id)
+    if key not in _replies:
+        _replies[key] = asyncio.create_task(_make_reply(code, task, turn_id, topic, history))
+    return _replies[key]
 
 
 async def _transcribe(code: str, task: str, topic: dict, history: list[dict], *, text: str, input_kind: str,
@@ -105,7 +143,9 @@ async def post_turn(
         user_turn = {
             "id": uid, "role": "user", "number": number, "text": final, "ts": now_iso(),
             "duration_s": round(duration_s, 2) if duration_s is not None else None,
-            "input": input, "stt_engine": stt["engine"], "feedback_status": "pending", "shown": False,
+            "input": input, "stt_engine": stt["engine"], "shown": False,
+            # User Trigger 는 요청하기 전까지 피드백을 만들지 않는다
+            "feedback_status": "not_requested" if task == "user" else "pending",
         }
         for key, field in (("raw", "stt_raw"), ("preview", "stt_preview"), ("cleaned", "stt_cleaned"),
                            ("ms", "stt_ms"), ("model", "stt_model"), ("fallback", "stt_fallback")):
@@ -125,12 +165,15 @@ async def post_turn(
         "recording": (rec or {}).get("file"),
     }, task=task)
 
-    # 피드백(채점)은 뒤에서 만들고, 대화 응답도 동시에 준비한다
-    feedback_jobs.start(code, task, uid, topic, _turn_context(history), final)
-    reply_job = asyncio.create_task(conversation_agent.reply(topic, history))
+    # 대화 상대의 답은 바로 뒤에서 만들기 시작한다
+    _start_reply(code, task, uid, topic, history)
+    # 피드백: AI Decision · Delayed 는 매 발화마다, User Trigger 는 요청할 때 만든다
+    if task != "user":
+        feedback_jobs.start(code, task, uid, topic, feedback_jobs.context_before({"turns": history}, uid), final)
 
     decision = None
     if task == "ai":
+        # AI Decision: 피드백이 먼저 나오고 그다음 대화 상대가 말하도록, 결정까지 기다렸다가 돌려준다
         wait_s = float(app_settings().get("ai_decision_feedback_wait_seconds", 60))
         t = await feedback_jobs.wait(code, task, uid, timeout=wait_s)
         if t and t.get("intervention") is not None:
@@ -139,26 +182,35 @@ async def post_turn(
         else:
             decision = {"ready": False, "show": False, "status": (t or {}).get("feedback_status")}
 
-    try:
-        result = await reply_job
-        if not result["text"]:
-            raise ValueError("empty reply")
-    except Exception as e:
-        log_event(code, "ai_error", {"where": "reply", "turn_id": uid, "error": str(e)[:300]}, task=task)
-        result = {"text": FALLBACK_REPLY, "pcm": b"", "fallback": True}
-
-    ai_turn = {}
-
-    def apply(sess):
-        ai_turn.update(make_ai_turn(code, task, session_store.next_turn_id(sess), result))
-        if result.get("fallback"):
-            ai_turn["fallback"] = True
-        sess["turns"].append(dict(ai_turn))
-
-    await session_store.mutate(code, task, apply)
-    log_event(code, "ai_utterance", {"turn_id": ai_turn["id"], "text": ai_turn["text"], "audio": ai_turn.get("audio"), "fallback": bool(result.get("fallback"))}, task=task)
     public_user = {k: v for k, v in user_turn.items() if k not in ("feedback", "intervention")}
-    return {"user_turn": public_user, "ai_turn": ai_turn, "ai_decision": decision}
+    return {"user_turn": public_user, "ai_decision": decision}
+
+
+class ReplyIn(BaseModel):
+    code: str
+    task: Task
+    turn_id: int
+
+
+@router.post("/turn/reply")
+async def get_reply(body: ReplyIn):
+    """내 발화(turn_id)에 대한 대화 상대의 답. 만들고 있으면 기다리고, 서버 재시작 등으로 사라졌으면 다시 만든다."""
+    p = get_participant(body.code)
+    code = p["code"]
+    job = _replies.get((code, body.task, body.turn_id))
+    if job is None:
+        s = session_store.load_session(code, body.task)
+        if not s or not session_store.find_turn(s, body.turn_id):
+            raise HTTPException(status_code=404, detail="해당 발화를 찾지 못했어요.")
+        done = next((t for t in s["turns"] if t.get("role") == "ai" and t.get("reply_to") == body.turn_id), None)
+        if done:
+            return {"ai_turn": done}
+        idx = next(i for i, t in enumerate(s["turns"]) if t["id"] == body.turn_id)
+        job = _start_reply(code, body.task, body.turn_id, topic_info(s["topic"]), s["turns"][:idx + 1])
+    ai = await asyncio.shield(job)
+    if not ai:
+        raise HTTPException(status_code=409, detail="이미 종료된 세션이에요.")
+    return {"ai_turn": ai}
 
 
 @router.get("/recording/{code}/{task}/{turn_id}")
@@ -182,22 +234,21 @@ class FeedbackIn(BaseModel):
 
 @router.post("/feedback/scores")
 async def feedback_scores(body: FeedbackIn):
-    """테스트 모드(?test=true): 피드백이 만들어질 때까지 기다렸다가 문장별 점수만 돌려준다 (고친 문장은 주지 않음)."""
+    """테스트 모드(?test=true): 피드백이 만들어질 때까지 기다렸다가 점수와 피드백 필요 여부만 돌려준다.
+    User Trigger 는 요청하기 전에는 피드백을 만들지 않으므로 기다리지 않는다."""
     if not app_settings().get("test_mode", {}).get("enabled", True):
         raise HTTPException(status_code=403, detail="테스트 모드가 꺼져 있어요.")
     p = get_participant(body.code)
+    s = session_store.load_session(p["code"], body.task)
+    t = session_store.find_turn(s, body.turn_id) if s else None
+    if t and t.get("feedback_status") == "not_requested":
+        return {"turn_id": body.turn_id, "status": "not_requested"}
     t = await feedback_jobs.wait(p["code"], body.task, body.turn_id)
     fb = (t or {}).get("feedback")
     if not fb:
-        return {"turn_id": body.turn_id, "status": (t or {}).get("feedback_status"), "sentences": []}
-    return {
-        "turn_id": body.turn_id,
-        "status": "ready",
-        "thresholds": fb.get("thresholds"),
-        "has_issue": fb.get("has_issue"),
-        "sentences": [{"index": s["index"], "original": s["original"], "L1": s["l1"]["score"], "L2": s["l2"]["score"],
-                       "over": s["over_threshold"], "flagged": s["flagged"]} for s in fb.get("sentences", [])],
-    }
+        return {"turn_id": body.turn_id, "status": (t or {}).get("feedback_status") or "error"}
+    return {"turn_id": body.turn_id, "status": "ready", "scores": fb.get("scores"),
+            "needs_feedback": fb.get("needs_feedback"), "has_issue": fb.get("has_issue")}
 
 
 @router.post("/feedback/await")
@@ -215,10 +266,11 @@ async def await_feedback(body: FeedbackIn):
 
 @router.post("/feedback/request")
 async def request_feedback(body: FeedbackIn):
-    """User Trigger: 참가자가 '피드백 보기'를 눌렀을 때.
+    """User Trigger: 참가자가 '피드백 보기'를 눌렀을 때 그 발화의 피드백을 만든다 (대화는 그동안에도 이어진다).
 
-    누른 사실은 피드백이 준비됐는지와 상관없이 턴에 바로 기록한다 (requested, requested_at, request_count).
-    피드백이 화면에 실제로 나타나면 shown=True, shown_via='request' 로 기록하고, Annotation 은 이 값으로 나뉜다.
+    누른 사실은 바로 턴에 기록한다 (requested, requested_at, request_count).
+    피드백이 화면에 나타나면 shown=True, shown_via='request' 로 기록하고, Annotation 은 이 값으로 나뉜다.
+    고칠 부분이 없으면 has_issue=False 인 피드백이 돌아가고 화면에는 '고칠 부분이 없어요'가 나온다.
     """
     p = get_participant(body.code)
     code = p["code"]
@@ -234,7 +286,7 @@ async def request_feedback(body: FeedbackIn):
 
     await session_store.mutate(code, body.task, mark_requested)
     log_event(code, "feedback_requested", {"turn_id": body.turn_id}, task=body.task)
-    t = await feedback_jobs.wait(code, body.task, body.turn_id)
+    t = await feedback_jobs.request(code, body.task, body.turn_id)
     if not t:
         raise HTTPException(status_code=404, detail="해당 발화를 찾지 못했어요.")
     if t.get("feedback_status") != "ready" or not t.get("feedback"):
@@ -244,7 +296,8 @@ async def request_feedback(body: FeedbackIn):
 
     def apply(s):
         turn = session_store.find_turn(s, body.turn_id)
-        if turn and not turn.get("shown"):
+        # 세션이 끝난 뒤에 만들어졌다면 참가자가 보지 못했으므로 '보여줌'으로 기록하지 않는다
+        if turn and not turn.get("shown") and not s.get("ended_at"):
             first_time["yes"] = True
             turn["shown"] = True
             turn["shown_at"] = now_iso()

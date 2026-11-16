@@ -12,14 +12,14 @@ from ..auth import require_admin
 import asyncio
 import time
 
-from ..config import DATA_DIR, TASK_KEYS, settings, tasks_config, thresholds, topics
+from ..config import DATA_DIR, TASK_KEYS, settings, tasks_config, topics
 from ..services import dashboard, gemini_live, llm, transcription
 from ..storage import codes_store, csv_export, session_store
 from ..storage.event_logger import log_admin_event, read_events
 
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
 
-Kind = Literal["turns", "sentences", "events", "annotations", "survey"]
+Kind = Literal["turns", "events", "annotations", "survey"]
 
 
 def _status(code: str) -> dict:
@@ -67,7 +67,7 @@ async def check_api():
 
 @router.get("/meta")
 def meta():
-    return {"topics": topics(), "tasks": tasks_config(), "orders": codes_store.VALID_ORDERS, "thresholds": thresholds(), "api": settings.api_status()}
+    return {"topics": topics(), "tasks": tasks_config(), "orders": codes_store.VALID_ORDERS, "api": settings.api_status()}
 
 
 @router.get("/codes")

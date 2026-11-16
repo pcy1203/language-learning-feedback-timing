@@ -35,7 +35,7 @@ export function render(main, ctx) {
   const listEl = h('ol', { class: 'list', style: { gap: '16px' } }, h('li', { class: 'lead' }, '불러오는 중…'));
   const legend = h('div', { class: 'legend' },
     h('span', {}, h('i', { class: 'seen' }), conf.labels.seen[task]),
-    task !== 'delayed' ? h('span', {}, h('i', { class: 'unseen' }), conf.labels.unseen[task]) : null,
+    task === 'user' ? h('span', {}, h('i', { class: 'unseen' }), conf.labels.unseen[task]) : null,
     h('span', {}, h('i', { class: 'none' }), '피드백 없음'));
 
   main.append(
@@ -81,7 +81,10 @@ export function render(main, ctx) {
         h('div', { class: 'who' }, h('b', {}, '나'), turn.recording_url ? playButton(turn.recording_url, onPlay) : null),
         h('div', { class: 'col' },
           h('p', { lang: 'en' }, turn.text),
-          fb?.intended_meaning ? h('p', { class: 'ann-intent' }, h('b', {}, 'AI가 이해한 의도'), ' · ', fb.intended_meaning) : null)));
+          fb?.intended_meaning ? h('p', { class: 'ann-intent' }, h('b', {}, 'AI가 이해한 의도'), ' · ', fb.intended_meaning) : null,
+          // AI Decision: 피드백을 보여주거나 보여주지 않기로 한 근거
+          task === 'ai' && fb?.rationale ? h('p', { class: 'ann-intent ann-rationale' },
+            h('b', {}, fb.has_issue ? 'AI가 피드백을 보여준 이유' : 'AI가 피드백을 보여주지 않은 이유'), ' · ', fb.rationale) : null)));
 
     const fbState = feedbackState(task, turn);
     if (!fbState) {
@@ -96,7 +99,8 @@ export function render(main, ctx) {
         h('p', { class: 'fb-text', lang: 'en' }, highlighted(turn.text, fb.revised, { muted: unseen })),
         summary ? h('p', { class: 'summary', lang: 'en' }, summary) : null));
     } else {
-      body.append(h('div', { class: 'ann-nofb' }, conf.labels[fbState]));
+      const label = conf.labels[fbState];
+      body.append(h('div', { class: 'ann-nofb' }, typeof label === 'string' ? label : label[task]));
     }
     const keys = (conf.rules[task] || {})[fbState] || [];
     return h('li', { class: 'ann-turn' }, body,

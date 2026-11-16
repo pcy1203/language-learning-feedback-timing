@@ -7,7 +7,7 @@ import { recorderSupported } from '../lib/recorder.js';
 import { apiStatus } from '../components/api-status.js';
 
 export function render(root, ctx) {
-  const titleEl = h('header', { class: 'solo-header' }, 'AI 활용 외국어 말하기 학습에서 교정적 피드백의 시점 연구');
+  const titleEl = h('header', { class: 'solo-header' }, 'AI 활용 외국어 말하기 학습에서 교정적 피드백의 제시 방식 연구');
   const statusSlot = h('div', { class: 'login-status' });
   // 음성 입력이 안 되는 브라우저 안내 (whisper 전사는 녹음만 되면 된다)
   const sttWarn = h('p', { class: 'notice', hidden: true }, '이 브라우저는 음성 인식을 지원하지 않아요. Chrome으로 접속해 주세요.');
@@ -87,7 +87,7 @@ export function render(root, ctx) {
           input, resumeNote, error, submit),
         sttWarn,
         h('ul', { class: 'notes' }, notes),
-        state.testMode ? h('p', { class: 'notice', style: { background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'var(--accent-line)' } }, '테스트 모드 · 대화 화면에서 발화 아래에 L1·L2 점수가 보여요') : null,
+        state.testMode ? h('p', { class: 'notice', style: { background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'var(--accent-line)' } }, '테스트 모드 · 대화 화면에서 발화 아래에 L1·L2·시급성 점수가 보여요') : null,
         statusSlot))));
   input.focus();
 }

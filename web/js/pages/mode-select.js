@@ -23,8 +23,8 @@ export function render(main, ctx) {
   const footer = pageFooter({ label: '대화 시작', onClick: () => ctx.next(), enabled: !!mode, hint: '피드백 방식을 골라 주세요' });
 
   const options = [
-    ['simple', '간단한 피드백', '더 나은 표현만 보여줘요'],
-    ['detailed', '자세한 피드백', '더 나은 표현과 함께 이유를 설명해요'],
+    ['simple', '간단한 피드백', '고친 문장만 보여줘요'],
+    ['detailed', '자세한 피드백', '고친 문장과 함께 이유를 설명해요'],
   ].map(([key, name, desc]) => {
     const input = h('input', { type: 'radio', name: 'mode', value: key, checked: mode === key });
     const label = h('label', { class: `choice${mode === key ? ' is-selected' : ''}` },

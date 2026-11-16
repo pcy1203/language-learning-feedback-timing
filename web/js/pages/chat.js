@@ -1,12 +1,15 @@
 // 대화 세션: AI가 먼저 말하고(음성 + 왼쪽 말풍선), 참가자는 마이크로 말한다(실시간 전사 + 오른쪽 말풍선).
 // 조건별 피드백 노출
-//   user    : 내 발화 아래 '피드백 보기' 버튼 → 누른 발화만 피드백 표시
-//   ai      : 문장별 L1·L2 점수 중 하나라도 기준값 이상인 발화만 자동 표시
-//   delayed : 대화 중에는 표시하지 않음 (종료 후 종합 피드백)
+//   user    : 내 발화 아래 '피드백 보기' 버튼 → 누르면 그때 피드백을 만들어 표시 (고칠 게 없으면 '고칠 부분이 없어요')
+//   ai      : 매 발화마다 피드백 AI가 지금 꼭 필요하다고 판단한 경우에만 자동 표시
+//   delayed : 대화 중에는 표시하지 않음 (매 발화 뒤에서 만들어 두고, 종료 후 종합 피드백과 함께)
 // AI 음성은 Gemini Live 가 만든 음성 파일(audio_url)을 재생하고, 없으면 브라우저 음성으로 읽는다.
 // 녹음: 마이크 버튼을 누른 순간부터 다시 누른 순간까지 녹음해 서버에 함께 보낸다 (data/recordings).
 // 전사: .env STT_ENGINE=browser 면 브라우저 인식 결과를, whisper 면 서버에서 Whisper 로 전사한 글자를 쓴다.
-// 응답 순서: AI Decision 은 피드백이 먼저 나온 뒤 대화 상대가 말하고, User Trigger 는 응답 전에 잠깐 기다린다.
+// 응답 순서: 내 발화를 먼저 받고(POST /api/turn) 대화 상대의 답은 따로 받는다(POST /api/turn/reply).
+//   AI Decision : 피드백이 먼저 나온 뒤 대화 상대가 말한다.
+//   User Trigger: 내 말이 나온 뒤 최소 2초 지나야 대화 상대가 말한다. '피드백 보기'를 누르면 그때 피드백을 만들고,
+//                 만드는 동안에도 대화는 이어진다.
 import { api } from '../api.js';
 import { state, save, currentTask } from '../state.js';
 import { h, icon, fmtClock } from '../lib/dom.js';
@@ -19,7 +22,7 @@ import { createTimer } from '../components/timer.js';
 import { createMicButton } from '../components/mic-button.js';
 import { createModeToggle } from '../components/mode-toggle.js';
 import { aiMessage, userMessage, liveMessage, typingMessage } from '../components/message-bubble.js';
-import { feedbackCard } from '../components/feedback-card.js';
+import { feedbackCard, loadingCard } from '../components/feedback-card.js';
 
 export function render(main, ctx) {
   const task = currentTask();
@@ -53,7 +56,7 @@ export function render(main, ctx) {
 
   // ── 상단 ──
   const banner = h('div', { class: 'overtime-banner', role: 'status', hidden: true },
-    `${Math.round(limit / 60)}분이 지났어요. 지금 하던 말을 마친 뒤 세션 종료를 눌러 주세요.`);
+    `${Math.round(limit / 60)}분이 지났어요. 지금 하던 발화를 마친 뒤 세션 종료를 눌러 주세요.`);
   const endBtn = h('button', { type: 'button', class: 'btn btn-dark-outline btn-end', style: { height: '40px' }, onclick: () => endSession() }, '세션 종료');
   const timer = createTimer({
     limitSec: limit,
@@ -112,7 +115,7 @@ export function render(main, ctx) {
   function setMic(kind) {
     const map = {
       idle: ['idle', '눌러서 말하기'],
-      rec: ['rec', '녹음 중 · 다시 누르면 보내기'],
+      rec: ['rec', '녹음 중 · 눌러서 발화 마무리하기'],
       sending: ['busy', whisper ? '말한 내용을 받아 적고 있어요' : 'AI가 답을 준비하고 있어요'],
       ai: ['busy', 'AI가 말을 마치면 말할 수 있어요'],
       loading: ['busy', '대화를 준비하고 있어요'],
@@ -151,21 +154,25 @@ export function render(main, ctx) {
     scrollDown();
   }
 
-  // 테스트 모드(?test=true): 내 발화 아래에 문장별 L1·L2 점수 표시
-  function addScores(id, bubbleEl) {
-    if (!testMode) return;
-    const box = h('div', { class: 'test-scores' }, '점수 계산 중…');
-    bubbleEl.after(box);
+  // 테스트 모드(?test=true): 내 발화 아래에 L1·L2·시급성 점수와 피드백 필요 여부 표시 (User Trigger 는 요청한 뒤)
+  const scoreBoxes = new Map();
+  function addScores(id) {
+    const e = entries.get(id);
+    if (!testMode || !e) return;
+    let box = scoreBoxes.get(id);
+    if (!box) {
+      box = h('div', { class: 'test-scores' });
+      e.bubble.after(box);
+      scoreBoxes.set(id, box);
+    }
+    box.textContent = '점수 계산 중…';
     api.feedbackScores(task, id).then((r) => {
-      if (!r.sentences?.length) { box.textContent = `점수 없음 (${r.status || '오류'})`; return; }
-      const th = r.thresholds || {};
+      if (r.status === 'not_requested') { box.textContent = 'TEST · 피드백을 요청하면 점수가 나와요'; return; }
+      if (!r.scores) { box.textContent = `점수 없음 (${r.status || '오류'})`; return; }
+      const sc = r.scores;
       box.replaceChildren(
-        h('span', { class: 'th' }, `TEST · 기준 L1≥${th.L1} 또는 L2≥${th.L2} → ${r.has_issue ? '피드백 대상' : '피드백 없음'}`),
-        ...r.sentences.map((s) => h('span', { class: `row${s.flagged ? ' flagged' : ''}` },
-          h('b', {}, `S${s.index}`),
-          h('span', { class: s.over.includes('L1') ? 'hit' : '' }, `L1 ${s.L1}`),
-          h('span', { class: s.over.includes('L2') ? 'hit' : '' }, `L2 ${s.L2}`),
-          h('span', { class: 'txt', lang: 'en' }, s.original))));
+        h('span', { class: 'th' }, `TEST · ${r.has_issue ? '피드백 있음' : '피드백 없음'} (점수는 기록용)`),
+        h('span', { class: 'row' }, h('span', {}, `L1 의미 ${sc.l1 ?? '—'}`), h('span', {}, `L2 자연스러움 ${sc.l2 ?? '—'}`), h('span', {}, `시급성 ${sc.urgency ?? '—'}`)));
     }).catch((err) => { box.textContent = `점수를 불러오지 못했어요 · ${err.message}`; });
   }
 
@@ -180,8 +187,8 @@ export function render(main, ctx) {
   function addUser(turn, { watch = true } = {}) {
     const view = userMessage(turn, { onPlay: onPlayClip });
     list.append(view.el);
-    addScores(turn.id, view.el.querySelector('.bubble'));
-    entries.set(turn.id, { slot: view.slot, text: turn.text, fb: null, meta: '' });
+    entries.set(turn.id, { slot: view.slot, bubble: view.bubble, text: turn.text, fb: null, meta: '' });
+    addScores(turn.id);
     if (turn.shown && turn.feedback) {
       const e = entries.get(turn.id);
       e.fb = turn.feedback;
@@ -199,21 +206,23 @@ export function render(main, ctx) {
     const e = entries.get(id);
     const btn = h('button', { type: 'button', class: 'btn btn-sm btn-accent-outline' }, icon('message', 15), '피드백 보기');
     btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      btn.replaceChildren('피드백을 불러오는 중…');
+      // 누르는 순간 피드백을 만들기 시작한다. 만드는 동안에도 대화는 그대로 이어진다.
+      const requestedAt = new Date().toISOString();
       logEvent('feedback_request_click', { turn_id: id, mode });
+      e.slot.replaceChildren(loadingCard('피드백을 만들고 있어요…'));
       try {
         const r = await api.requestFeedback(task, id);
         if (!alive) return;
         if (r.status === 'ready' && r.feedback) {
-          showFeedback(id, r.feedback, `${fmtClock(new Date().toISOString())}에 요청`);
+          showFeedback(id, r.feedback, `${fmtClock(requestedAt)}에 요청`);
+          addScores(id);
         } else {
           throw new Error('피드백을 만들지 못했어요. 잠시 후 다시 눌러 주세요.');
         }
       } catch (err) {
+        if (!alive) return;
         toast(err.message);
-        btn.disabled = false;
-        btn.replaceChildren(icon('message', 15), '피드백 보기');
+        e.slot.replaceChildren(btn);
       }
     });
     e.slot.replaceChildren(btn);
@@ -298,7 +307,7 @@ export function render(main, ctx) {
         }
       }
     }
-    if (!stt) live.update({ finals: '', interim: '말하는 중… (그만 버튼을 누르면 받아 적어요)' });
+    if (!stt) live.update({ finals: '', interim: '말하는 중… (버튼을 다시 누르면 받아 적어요)' });
     recStart = performance.now();
     hint.hidden = true;
     meter.hidden = false;
@@ -363,44 +372,14 @@ export function render(main, ctx) {
     if (input === 'speech' && whisper) temp.slot.replaceChildren(h('span', { class: 'stt-note' }, '받아 적는 중…'));
     else if (input === 'speech' && sttConf.cleanup) temp.slot.replaceChildren(h('span', { class: 'stt-note' }, '전사 다듬는 중…'));
     list.append(temp.el);
-    // AI Decision 은 피드백이 먼저 나오므로, 대화 상대의 '입력 중' 대신 하단에 작게 표시
-    let status = null;
-    let typing = null;
-    if (task === 'ai') status = bottomStatus('피드백 생성 중…');
-    else { typing = typingMessage(); list.append(typing); }
+    // AI Decision 은 피드백이 먼저 나오므로, 하단에 작게 '피드백 생성 중…'
+    const status = task === 'ai' ? bottomStatus('피드백 생성 중…') : null;
     scrollDown();
+    let r;
     try {
-      const r = await api.sendTurn(task, { text, duration_s: duration, input, audio });
-      if (!alive) return;
-      temp.el.remove();
-      status?.remove();
-      typing?.remove();
-      typing = null;
-      addUser(r.user_turn, { watch: false });
-
-      if (task === 'ai') {
-        const d = r.ai_decision || {};
-        if (d.ready && d.show && d.feedback) {
-          showFeedback(r.user_turn.id, d.feedback);
-          await wait(delays.ai_after_feedback ?? 1.0);
-        } else if (!d.ready) {
-          watchAi(r.user_turn.id); // 피드백이 늦으면 대화는 먼저 이어가고, 준비되면 보여준다
-        }
-      } else if (task === 'user' && (delays.user ?? 0) > 0) {
-        // User Trigger: 대화 상대가 바로 말하지 않고 잠깐 기다린다 (피드백 보기를 누를 여유)
-        typing = typingMessage();
-        list.append(typing);
-        scrollDown();
-        await wait(delays.user);
-        typing.remove();
-        typing = null;
-      }
-      if (!alive) return;
-      addAi(r.ai_turn);
-      await playAi(r.ai_turn);
+      r = await api.sendTurn(task, { text, duration_s: duration, input, audio });
     } catch (err) {
       status?.remove();
-      typing?.remove();
       busy = false;
       if (err.status === 422) {
         temp.el.remove();
@@ -409,6 +388,45 @@ export function render(main, ctx) {
         temp.slot.replaceChildren(h('span', { class: 'send-error' }, `보내지 못했어요 · ${err.message}`));
       }
       if (alive && !ended) setMic('idle');
+      return;
+    }
+    if (!alive) return;
+    temp.el.remove();
+    status?.remove();
+    addUser(r.user_turn, { watch: false });
+    const shownAt = performance.now();
+    const replyP = api.getReply(task, r.user_turn.id); // 대화 상대의 답 (서버에서 이미 만드는 중)
+
+    if (task === 'ai') {
+      const d = r.ai_decision || {};
+      if (d.ready && d.show && d.feedback) {
+        showFeedback(r.user_turn.id, d.feedback);
+        await wait(delays.ai_after_feedback ?? 1.0);
+      } else if (!d.ready) {
+        watchAi(r.user_turn.id); // 피드백이 늦으면 대화는 먼저 이어가고, 준비되면 보여준다
+      }
+    }
+    await deliverReply(replyP, task === 'user' ? (delays.user ?? 0) - (performance.now() - shownAt) / 1000 : 0);
+  }
+
+  // 대화 상대의 답을 받아 보여주고 읽는다 (minWait 초만큼은 기다렸다가)
+  async function deliverReply(replyP, minWait = 0) {
+    if (!alive) return;
+    const typing = typingMessage();
+    list.append(typing);
+    scrollDown();
+    try {
+      const [rr] = await Promise.all([replyP, wait(minWait)]);
+      typing.remove();
+      if (!alive || ended) return;
+      addAi(rr.ai_turn);
+      await playAi(rr.ai_turn);
+    } catch (err) {
+      typing.remove();
+      busy = false;
+      if (!alive || ended) return;
+      toast(`대화 상대의 답을 받지 못했어요 · ${err.message}`);
+      setMic('idle');
     }
   }
 
@@ -460,7 +478,12 @@ export function render(main, ctx) {
       for (const t of s.turns) (t.role === 'ai' ? addAi(t) : addUser(t));
       const last = s.turns[s.turns.length - 1];
       if (s.turns.length === 1 && last?.role === 'ai') await playAi(last);
-      else setMic('idle');
+      else if (last?.role === 'user') {
+        // 내 말을 보낸 직후 새로고침된 경우: 대화 상대의 답을 마저 받는다
+        busy = true;
+        setMic('sending');
+        await deliverReply(api.getReply(task, last.id));
+      } else setMic('idle');
     } catch (err) {
       list.replaceChildren(h('div', { class: 'error-box', role: 'alert' },
         h('span', {}, err.message),

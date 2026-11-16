@@ -37,6 +37,6 @@ export function renderSidebar(aside, { onExit } = {}) {
     h('ol', { class: 'sb-steps', 'aria-label': '진행 단계' }, steps),
     onExit ? h('div', { class: 'sb-foot' },
       h('button', { type: 'button', class: 'sb-exit', onclick: onExit }, icon('exit', 15), '나가기'),
-      h('span', {}, '진행 상황은 저장돼요')) : null,
+) : null,
   );
 }
